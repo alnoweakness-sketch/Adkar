@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#07070f">
+<title>نظام الادخار</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏦</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!--
+╔══════════════════════════════════════════════════════════╗
+║  FIRESTORE SECURITY RULES                                ║
+║  Firebase Console → Firestore Database → Rules           ║
+╠══════════════════════════════════════════════════════════╣
+║  rules_version = '2';                                    ║
+║  service cloud.firestore {                               ║
+║    match /databases/{database}/documents {               ║
+║      match /savings/{document} {                         ║
+║        allow read, write: if true;                       ║
+║      }                                                   ║
+║    }                                                     ║
+║  }                                                       ║
+╚══════════════════════════════════════════════════════════╝
+-->
+
+<style>
+/* ════════════════════════════════════════════════
+   DESIGN TOKENS  —  WCAG AA enforced
+   --sub  6.3:1  |  --dim  4.6:1  on var(--bg)
+   ════════════════════════════════════════════════ */
+:root {
+  --bg:    #07070f;
+  --bg2:   #0e0e1c;
+  --sur:   rgba(255,255,255,.055);
+  --brd:   rgba(255,255,255,.09);
+  --text:  #f1f1fa;
+  --sub:   #9ca3af;
+  --dim:   #6b7b8e;
+  --red:   #f87171;
+  --warn:  #fbbf24;
+  --green: #4ade80;
+  --today-bg: rgba(239,68,68,.14);
+  --today-acc: #ef4444;
+
+  /* Person palette — neutral, non-financial */
+  --c0:#818cf8; --c1:#fbbf24; --c2:#34d399;
+  --c3:#f472b6; --c4:#60a5fa; --c5:#a78bfa;
+}
+
+/* ── Reset ─────────────────────────────────────── */
+*, *::before, *::after {
+  margin: 0; padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html, body { background: var(--bg); }
+body {
+  font-family: 'Cairo', sans-serif;
+  color: var(--text);
+  min-height: 100vh;
+  padding: 14px 11px 64px;
+}
+
+/* ── Layout ────────────────────────────────────── */
+.wrap { max-width: 500px; margin: 0 auto; }
+
+/* ── Connection Banner ─────────────────────────── */
+#conn-banner {
+  display: none;
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.25);
+  border-radius: 10px;
+  padding: 9px 13px;
+  font-size: .74rem;
+  color: var(--red);
+  font-weight: 700;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+/* ── Header ────────────────────────────────────── */
+.hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 13px;
+  gap: 6px;
+}
+.hdr-title { font-size: 1rem; font-weight: 900; }
+.hdr-sub   { font-size: .67rem; color: var(--sub); margin-top: 2px; }
+.hdr-r     { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+
+/* ── Sync indicator ────────────────────────────── */
+.sync-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background .3s;
+}
+.sync-dot.synced  { background: #34d399; }
+.sync-dot.saving  { background: #fbbf24; animation: blink 1s infinite; }
+.sync-dot.offline { background: #f87171; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── Buttons ───────────────────────────────────── */
+.ibtn {
+  padding: 7px 11px;
+  border-radius: 99px;
+  border: 1px solid var(--brd);
+  background: var(--sur);
+  color: var(--sub);
+  font-family: inherit;
+  font-size: .72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .18s;
+}
+.ibtn:hover          { color: var(--text); border-color: rgba(255,255,255,.2); }
+.ibtn.accent         { background: rgba(129,140,248,.12); border-color: rgba(129,140,248,.25); color: #818cf8; }
+.ibtn:disabled       { opacity: .4; cursor: not-allowed; }
+
+/* ── Card ──────────────────────────────────────── */
+.card {
+  background: var(--sur);
+  border: 1px solid var(--brd);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+/* ── Grand Progress ────────────────────────────── */
+.prog-row  { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+.prog-amt  { font-size: 1.35rem; font-weight: 900; line-height: 1; }
+.prog-amt small { font-size: .63rem; font-weight: 400; color: var(--dim); margin-right: 2px; }
+.prog-pct  { font-size: .95rem; font-weight: 900; }
+.prog-tgt  { font-size: .68rem; color: var(--dim); }
+.bar       { height: 7px; background: rgba(255,255,255,.06); border-radius: 99px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 99px; background: linear-gradient(90deg,#818cf8,#34d399); transition: width .55s ease; }
+.prog-foot { display: flex; justify-content: space-between; font-size: .68rem; color: var(--dim); margin-top: 5px; }
+.red { color: var(--red); font-weight: 700; }
+
+/* ── Subscriber Cards ──────────────────────────── */
+.sub-scroll {
+  display: flex; gap: 9px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+.sub-scroll::-webkit-scrollbar        { height: 3px; }
+.sub-scroll::-webkit-scrollbar-thumb  { background: rgba(255,255,255,.1); border-radius: 99px; }
+.sub-card {
+  flex: 0 0 186px;
+  background: var(--sur);
+  border: 1px solid var(--brd);
+  border-radius: 13px;
+  padding: 12px 11px;
+  border-top: 3px solid transparent;
+}
+.sub-name-row  { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 4px; }
+.sub-name      { font-size: .83rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-name:hover { opacity: .75; }
+.sub-del       { background: none; border: none; cursor: pointer; color: var(--dim); font-size: .78rem; padding: 2px 4px; border-radius: 5px; flex-shrink: 0; line-height: 1; }
+.sub-del:hover { color: var(--red); }
+.sub-name-inp  { background: transparent; border: none; border-bottom: 2px solid currentColor; color: inherit; font-family: inherit; font-size: .83rem; font-weight: 700; outline: none; width: 100%; }
+.sub-amount    { font-size: 1.15rem; font-weight: 900; line-height: 1.1; }
+.sub-of        { font-size: .63rem; color: var(--dim); margin-bottom: 8px; }
+.sub-target-inp {
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--brd);
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-family: inherit; font-size: .72rem; color: var(--text);
+  outline: none; width: 100%; margin-bottom: 7px; text-align: center;
+}
+.sub-bar       { height: 3px; background: rgba(255,255,255,.05); border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
+.sub-bar-fill  { height: 100%; border-radius: 99px; transition: width .4s; }
+.chips         { display: flex; gap: 3px; flex-wrap: wrap; }
+.chip          { font-size: .61rem; font-weight: 700; padding: 2px 7px; border-radius: 99px; }
+.chip-ok       { background: rgba(74,222,128,.11);  color: #4ade80; }
+.chip-bad      { background: rgba(248,113,113,.11); color: #f87171; }
+.chip-n        { background: rgba(255,255,255,.06); color: var(--sub); }
+
+/* ── Chart ─────────────────────────────────────── */
+.chart-lbl { font-size: .73rem; font-weight: 700; color: var(--sub); margin-bottom: 10px; }
+#myChart   { max-height: 155px; }
+
+/* ── Table ─────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; }
+.tbl-wrap::-webkit-scrollbar        { height: 3px; }
+.tbl-wrap::-webkit-scrollbar-thumb  { background: rgba(255,255,255,.08); border-radius: 99px; }
+
+.log-tbl { width: 100%; border-collapse: collapse; table-layout: auto; }
+
+/* Sticky header — survives mobile scroll */
+.log-tbl thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg2);
+  font-size: .68rem; font-weight: 700; color: var(--sub);
+  padding: 7px 5px 9px;
+  border-bottom: 1px solid var(--brd);
+  text-align: center;
+  white-space: nowrap;
+}
+.log-tbl thead th.th-day {
+  position: sticky;
+  top: 0;
+  right: 0;        /* sticky column */
+  z-index: 20;     /* above other sticky headers */
+  text-align: right;
+  padding-right: 9px;
+  min-width: 62px;
+  box-shadow: -2px 0 8px rgba(0,0,0,.5);
+}
+
+/* Body rows */
+.log-tbl tbody td { border-bottom: 1px solid rgba(255,255,255,.024); padding: 1px 2px; }
+.log-tbl tbody tr:last-child td { border-bottom: none; }
+
+/* Sticky day column */
+.td-day {
+  position: sticky;
+  right: 0; z-index: 2;
+  background: var(--bg);
+  padding: 4px 9px 4px 4px !important;
+  vertical-align: middle;
+  white-space: nowrap;
+  box-shadow: -2px 0 8px rgba(0,0,0,.5);
+  border-right: 3px solid transparent;
+  min-width: 62px;
+}
+.td-day-num  { font-size: .74rem; font-weight: 700; color: var(--sub); line-height: 1.2; }
+.td-day-date { font-size: .6rem;  color: var(--dim); line-height: 1; }
+
+/* Today highlight */
+.today-row .td-day          { border-right-color: var(--today-acc) !important; background: var(--bg); }
+.today-row .td-day .td-day-num { color: var(--today-acc); }
+.today-row td:not(.td-day)  { background: var(--today-bg); }
+
+/* ── Day Cell ──────────────────────────────────── */
+.day-cell {
+  min-height: 44px;
+  min-width: 86px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: .76rem; font-weight: 700;
+  border-radius: 8px;
+  transition: filter .12s, transform .1s;
+  padding: 4px 5px;
+  user-select: none;
+}
+.day-cell:hover  { filter: brightness(1.25); }
+.day-cell:active { transform: scale(.93); }
+.day-cell.unpaid { color: var(--dim); }
+.day-cell.paid   { color: var(--text); }
+
+/* ── Bottom Sheet ──────────────────────────────── */
+.sheet-ov {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.78);
+  backdrop-filter: blur(6px);
+  z-index: 100;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet-ov.open { display: flex; }
+.sheet-box {
+  background: var(--bg2);
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 20px 20px 0 0;
+  padding: 16px 18px 42px;
+  width: 100%; max-width: 500px;
+}
+.sheet-drag    { width: 34px; height: 4px; background: rgba(255,255,255,.13); border-radius: 99px; margin: 0 auto 14px; }
+.sheet-title   { font-size: .96rem; font-weight: 700; margin-bottom: 3px; }
+.sheet-hint    { font-size: .73rem; color: var(--sub); margin-bottom: 13px; }
+.sheet-def     {
+  width: 100%; padding: 13px;
+  border-radius: 11px; border: none;
+  font-family: inherit; font-size: .9rem; font-weight: 700; color: #fff;
+  margin-bottom: 11px; cursor: pointer; transition: opacity .18s;
+}
+.sheet-def:hover { opacity: .85; }
+.sheet-div     { display: flex; align-items: center; gap: 8px; font-size: .68rem; color: var(--dim); margin-bottom: 10px; }
+.sheet-div::before,.sheet-div::after { content: ''; flex: 1; height: 1px; background: var(--brd); }
+.sheet-inp-row { display: flex; gap: 7px; margin-bottom: 9px; align-items: center; }
+.sheet-inp     {
+  flex: 1;
+  background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  padding: 12px; font-family: inherit; font-size: 1rem; font-weight: 700;
+  color: var(--text); outline: none; text-align: center;
+}
+.sheet-inp:focus { border-color: rgba(255,255,255,.26); }
+.sheet-save    { padding: 12px 15px; border-radius: 10px; border: none; background: rgba(255,255,255,.08); color: var(--text); font-family: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; }
+.sheet-clear   { width: 100%; padding: 9px; border-radius: 10px; border: 1px solid rgba(248,113,113,.2); background: rgba(248,113,113,.07); color: #f87171; font-family: inherit; font-size: .76rem; font-weight: 700; cursor: pointer; }
+
+/* ── Action Bar ────────────────────────────────── */
+.actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.act-btn {
+  padding: 8px 13px; border-radius: 99px;
+  border: 1px solid var(--brd); background: var(--sur);
+  color: var(--sub); font-family: inherit; font-size: .71rem; font-weight: 700;
+  cursor: pointer; white-space: nowrap; transition: all .18s;
+}
+.act-btn:hover        { color: var(--text); border-color: rgba(255,255,255,.22); }
+.act-btn.danger       { border-color: rgba(248,113,113,.22); color: #f87171; }
+.act-btn.danger:hover { background: rgba(248,113,113,.08); }
+
+/* ── Modals ────────────────────────────────────── */
+.modal-ov {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.82);
+  backdrop-filter: blur(6px);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal-ov.open { display: flex; }
+.modal-box {
+  background: var(--bg2);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 18px;
+  padding: 22px 20px;
+  width: 100%; max-width: 390px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+.modal-box::-webkit-scrollbar       { width: 3px; }
+.modal-box::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 99px; }
+.modal-title   { font-size: .96rem; font-weight: 900; margin-bottom: 7px; }
+.modal-text    { font-size: .79rem; color: var(--sub); margin-bottom: 15px; line-height: 1.65; }
+.modal-label   { display: block; font-size: .74rem; font-weight: 700; color: var(--sub); margin-bottom: 5px; }
+.modal-inp     {
+  background: rgba(255,255,255,.05); border: 1px solid var(--brd);
+  border-radius: 9px; padding: 11px 12px;
+  font-family: inherit; font-size: .88rem; color: var(--text);
+  outline: none; width: 100%; margin-bottom: 10px;
+}
+.modal-inp:focus    { border-color: rgba(255,255,255,.23); }
+.modal-inp:disabled { opacity: .4; cursor: not-allowed; }
+.modal-btns    { display: flex; gap: 8px; margin-top: 4px; }
+.modal-btns button {
+  flex: 1; padding: 11px; border-radius: 10px; border: none;
+  font-family: inherit; font-size: .83rem; font-weight: 700; cursor: pointer;
+}
+.btn-cancel  { background: rgba(255,255,255,.07); color: var(--text); }
+.btn-ok      { background: #6366f1; color: #fff; }
+.btn-danger  { background: #ef4444; color: #fff; }
+.wide-btn    { width: 100%; padding: 11px; border-radius: 10px; border: none; cursor: pointer; font-family: inherit; font-size: .83rem; font-weight: 700; }
+.warn-box    { background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.22); border-radius: 9px; padding: 9px 12px; font-size: .74rem; color: #fbbf24; margin-bottom: 12px; line-height: 1.55; }
+.err-box     { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.22); border-radius: 9px; padding: 9px 12px; font-size: .74rem; color: #f87171; margin-bottom: 12px; line-height: 1.55; display: none; }
+
+/* ── Archive list ──────────────────────────────── */
+.arch-item       { background: rgba(255,255,255,.03); border: 1px solid var(--brd); border-radius: 10px; padding: 11px 13px; margin-bottom: 8px; }
+.arch-item-title { font-size: .84rem; font-weight: 700; margin-bottom: 3px; }
+.arch-item-meta  { font-size: .68rem; color: var(--sub); margin-bottom: 8px; }
+.arch-item-btns  { display: flex; gap: 5px; flex-wrap: wrap; }
+.arch-item-btns button {
+  padding: 5px 11px; border-radius: 99px;
+  border: 1px solid var(--brd); background: var(--sur);
+  color: var(--sub); font-family: inherit; font-size: .68rem; font-weight: 700; cursor: pointer; transition: all .18s;
+}
+.arch-item-btns button:hover { color: var(--text); }
+.arch-view-grid  { display: grid; grid-template-columns: repeat(5,1fr); gap: 3px; margin-top: 8px; }
+.arch-cell       { background: rgba(255,255,255,.03); border-radius: 7px; padding: 5px 2px; text-align: center; font-size: .63rem; }
+.arch-cell-day   { color: var(--dim); font-size: .56rem; margin-bottom: 1px; }
+.arch-cell-val   { font-weight: 700; }
+
+/* ── Week separator — every 7 rows ────────────── */
+.week-sep td { border-bottom: 2px solid rgba(255,255,255,.13) !important; }
+.week-label {
+  position: relative;
+}
+.week-label::after {
+  content: attr(data-week);
+  position: absolute;
+  left: 4px; top: 50%;
+  transform: translateY(-50%);
+  font-size: .52rem; font-weight: 700;
+  color: var(--dim);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Missed past day — red tint ───────────────── */
+.day-cell.missed-past {
+  background: rgba(248,113,113,.07) !important;
+  color: rgba(248,113,113,.55) !important;
+  border: 1px dashed rgba(248,113,113,.2);
+}
+
+/* ── Report modal ──────────────────────────────── */
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.report-stat {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--brd);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.report-stat-val  { font-size: 1.1rem; font-weight: 900; line-height: 1.2; margin-bottom: 3px; }
+.report-stat-lbl  { font-size: .65rem; color: var(--sub); }
+.report-person {
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--brd);
+  border-radius: 11px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-right: 3px solid transparent;
+}
+.report-person-name { font-size: .86rem; font-weight: 700; margin-bottom: 8px; }
+.report-bar-wrap  { height: 5px; background: rgba(255,255,255,.06); border-radius: 99px; overflow: hidden; margin-bottom: 7px; }
+.report-bar-fill  { height: 100%; border-radius: 99px; }
+.report-chips     { display: flex; gap: 4px; flex-wrap: wrap; }
+.report-week-grid {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 5px;
+  margin-top: 10px;
+}
+.report-week-cell {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--brd);
+  border-radius: 8px;
+  padding: 7px 4px;
+  text-align: center;
+  font-size: .66rem;
+}
+.report-week-cell-lbl { color: var(--dim); font-size: .6rem; margin-bottom: 3px; }
+.report-week-cell-val { font-weight: 700; }
+
+/* ── Login screen ──────────────────────────────── */
+#screen-login {
+  display: none;
+  position: fixed; inset: 0;
+  background: var(--bg);
+  align-items: center; justify-content: center;
+  padding: 24px;
+  background-image: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(129,140,248,.1) 0%, transparent 65%);
+}
+#screen-login.visible { display: flex; }
+.login-box   { max-width: 320px; width: 100%; text-align: center; }
+.login-icon  { font-size: 3.2rem; margin-bottom: 14px; }
+.login-title {
+  font-size: 1.55rem; font-weight: 900; margin-bottom: 8px;
+  background: linear-gradient(100deg,#818cf8,#34d399);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.login-sub   { font-size: .8rem; color: var(--sub); margin-bottom: 26px; line-height: 1.65; }
+.btn-google  {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 13px 18px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.07);
+  color: var(--text); font-family: inherit; font-size: .88rem; font-weight: 700;
+  cursor: pointer; transition: all .2s;
+}
+.btn-google:hover    { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.2); }
+.btn-google:disabled { opacity: .45; cursor: not-allowed; }
+.login-err   { font-size: .74rem; color: var(--red); min-height: 18px; margin-top: 10px; }
+.login-note  { font-size: .67rem; color: var(--dim); margin-top: 16px; line-height: 1.7; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--sur) center/cover; border: 1px solid var(--brd);
+  cursor: pointer; overflow: hidden; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .7rem;
+}
+
+/* ── Loading overlay ───────────────────────────── */
+#overlay-loading {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 14px;
+  z-index: 999;
+  font-size: .88rem; color: var(--sub);
+}
+.spinner { width: 22px; height: 22px; border: 2px solid rgba(255,255,255,.1); border-top-color: #818cf8; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══════════════════════════════════════════════ -->
+<div id="screen-login">
+  <div class="login-box">
+    <div class="login-icon">🏦</div>
+    <div class="login-title">نظام الادخار</div>
+    <div class="login-sub">
+      سجّل دخولك بحساب Google لحماية بياناتك<br>
+      تُزامن لحظياً بينك وبين شريكك
+    </div>
+    <button class="btn-google" id="btnGoogle" onclick="signInGoogle()">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      تسجيل الدخول بـ Google
+    </button>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-note">يجب فتح التطبيق من الرابط المستضاف<br>لا يعمل مباشرةً من ملف محلي (file://)</div>
+  </div>
+</div>
+
+<!-- ══ LOADING ═══════════════════════════════════════════ -->
+<div id="overlay-loading">
+  <div class="spinner"></div>
+  <span>جاري الاتصال بـ Firebase...</span>
+</div>
+
+<!-- ══ APP ═══════════════════════════════════════════════ -->
+<div class="wrap" id="app" style="display:none">
+
+  <!-- Connection banner (shows when offline) -->
+  <div id="conn-banner">⚠️ غير متصل — البيانات تُحفظ محلياً وتُرفع عند عودة الإنترنت</div>
+
+  <!-- Header -->
+  <div class="hdr">
+    <div>
+      <div class="hdr-title">🏦 نظام الادخار</div>
+      <div class="hdr-sub" id="hdrSub">—</div>
+    </div>
+    <div class="hdr-r">
+      <div class="sync-dot saving" id="syncDot" title="جاري الحفظ..."></div>
+      <button class="ibtn" id="archBtnH" style="display:none" onclick="openArchiveList()">📦</button>
+      <button class="ibtn" onclick="openSettings()">⚙️</button>
+      <button class="ibtn accent" onclick="openAddUser()">＋</button>
+      <div class="avatar" id="userAvatar" onclick="signOutUser()" title="تسجيل الخروج">👤</div>
+    </div>
+  </div>
+
+  <!-- Grand Progress -->
+  <div class="card">
+    <div class="prog-row">
+      <div>
+        <div style="font-size:.68rem;color:var(--sub);margin-bottom:3px">الإجمالي الكلي</div>
+        <div class="prog-amt" id="grandPaid">0 <small>ل.س</small></div>
+      </div>
+      <div style="text-align:left">
+        <div class="prog-tgt">الهدف: <span id="grandTarget">—</span> ل.س</div>
+        <div class="prog-pct" id="grandPct">0%</div>
+      </div>
+    </div>
+    <div class="bar"><div class="bar-fill" id="grandBar" style="width:0%"></div></div>
+    <div class="prog-foot">
+      <span>متبقي: <span class="red" id="grandRemain">—</span> ل.س</span>
+      <span id="grandDaysLeft" style="color:var(--dim)"></span>
+    </div>
+  </div>
+
+  <!-- Subscriber Cards -->
+  <div class="sub-scroll" id="subCards"></div>
+
+  <!-- Chart — always visible -->
+  <div class="card">
+    <div class="chart-lbl">📈 التقدم الفعلي مقابل المتوقع</div>
+    <canvas id="myChart"></canvas>
+  </div>
+
+  <!-- Log Table -->
+  <div class="card" style="padding:10px 6px">
+    <div class="tbl-wrap">
+      <table class="log-tbl">
+        <thead><tr id="logHead"></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Action bar -->
+  <div class="actions">
+    <button class="act-btn" onclick="triggerImport()">📂 استعادة</button>
+    <button class="act-btn" onclick="exportJSON()">💾 نسخة</button>
+    <button class="act-btn" onclick="openArchiveConfirm()">📦 أرشفة</button>
+    <button class="act-btn danger" onclick="openModal('modalClear')">🗑️ مسح</button>
+  </div>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+
+</div><!-- /app -->
+
+<!-- ══ BOTTOM SHEET ═══════════════════════════════════════ -->
+<div class="sheet-ov" id="sheet" onclick="if(event.target===this)closeSheet()">
+  <div class="sheet-box">
+    <div class="sheet-drag"></div>
+    <div class="sheet-title" id="sheetTitle"></div>
+    <div class="sheet-hint"  id="sheetHint"></div>
+    <button class="sheet-def" id="sheetDefBtn" onclick="confirmDefault()"></button>
+    <div class="sheet-div">أو أدخل مبلغاً مختلفاً</div>
+    <div class="sheet-inp-row">
+      <input class="sheet-inp" id="sheetInp" type="text" inputmode="numeric" placeholder="0 ل.س">
+      <button class="sheet-save" onclick="confirmCustom()">حفظ</button>
+    </div>
+    <button class="sheet-clear" id="sheetClearBtn" onclick="clearDay()">✗ مسح الدفع</button>
+  </div>
+</div>
+
+<!-- ══ SETTINGS ═══════════════════════════════════════════ -->
+<div class="modal-ov" id="modalSettings" onclick="if(event.target===this)closeModal('modalSettings')">
+  <div class="modal-box">
+    <div class="modal-title">⚙️ الإعدادات</div>
+    <div class="modal-text">تاريخ البداية يحدد الـ 30 يوماً المعروضة في الجدول. يُقفل تلقائياً بعد إدخال بيانات.</div>
+    <label class="modal-label">تاريخ بداية الدورة</label>
+    <input class="modal-inp" id="startDateInp" type="date">
+    <div class="warn-box" id="startDateLock" style="display:none">
+      🔒 لا يمكن تغيير التاريخ بعد إدخال بيانات.<br>امسح كل البيانات أولاً لإعادة ضبطه.
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalSettings')">إلغاء</button>
+      <button class="btn-ok" id="settingsSaveBtn" onclick="saveSettings()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ADD USER ════════════════════════════════════════════ -->
+<div class="modal-ov" id="modalAddUser" onclick="if(event.target===this)closeModal('modalAddUser')">
+  <div class="modal-box">
+    <div class="modal-title">＋ إضافة مشترك</div>
+    <label class="modal-label">الاسم</label>
+    <input class="modal-inp" id="newUserName" placeholder="مثال: محمد">
+    <label class="modal-label">الهدف الشهري (ل.س)</label>
+    <input class="modal-inp" id="newUserTarget" type="text" inputmode="numeric" placeholder="300,000">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalAddUser')">إلغاء</button>
+      <button class="btn-ok" onclick="confirmAddUser()">إضافة</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ END-OF-MONTH REPORT ════════════════════════════════ -->
+<div class="modal-ov" id="modalReport" onclick="if(event.target===this)closeModal('modalReport')">
+  <div class="modal-box">
+    <div class="modal-title" id="reportTitle">📊 تقرير الدورة</div>
+    <div class="modal-text" id="reportSubtitle"></div>
+    <div class="report-grid" id="reportGrandStats"></div>
+    <div id="reportPersons"></div>
+    <div style="font-size:.74rem;font-weight:700;color:var(--sub);margin-bottom:8px">الأداء الأسبوعي</div>
+    <div class="report-week-grid" id="reportWeeks"></div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn-cancel" onclick="closeModal('modalReport')">إغلاق</button>
+      <button class="btn-ok" onclick="closeModal('modalReport');openArchiveConfirmStep2()">متابعة الأرشفة ←</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ARCHIVE CONFIRM (deep-copy warning) ════════════════ -->
+<div class="modal-ov" id="modalArchiveConfirm" onclick="if(event.target===this)closeModal('modalArchiveConfirm')">
+  <div class="modal-box">
+    <div class="modal-title">📦 أرشفة الشهر الحالي</div>
+    <div class="modal-text">
+      ستُحفظ نسخة كاملة من البيانات الحالية (الأسماء، الأهداف، كل المبالغ) في الأرشيف،
+      ثم يبدأ شهر جديد نظيف. هذا الإجراء لا يُحذف البيانات القديمة.
+    </div>
+    <label class="modal-label">اسم هذه الدورة</label>
+    <input class="modal-inp" id="archLabelInp" placeholder="مثال: مارس 2026">
+    <div class="warn-box">⚠️ تأكد من صحة البيانات قبل المتابعة. لن تختفي القديمة من الأرشيف.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalArchiveConfirm')">إلغاء</button>
+      <button class="btn-ok" onclick="confirmArchive()">أرشفة الآن</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ARCHIVE LIST ════════════════════════════════════════ -->
+<div class="modal-ov" id="modalArchList" onclick="if(event.target===this)closeModal('modalArchList')">
+  <div class="modal-box">
+    <div class="modal-title" style="margin-bottom:13px">📦 الأرشيف</div>
+    <div id="archListContent"></div>
+    <button class="wide-btn btn-cancel" onclick="closeModal('modalArchList')" style="margin-top:8px">إغلاق</button>
+  </div>
+</div>
+
+<!-- ══ ARCHIVE VIEW ════════════════════════════════════════ -->
+<div class="modal-ov" id="modalArchView" onclick="if(event.target===this){closeModal('modalArchView');openArchiveList()}">
+  <div class="modal-box">
+    <div class="modal-title" id="archViewTitle"></div>
+    <div class="modal-text" id="archViewMeta"></div>
+    <div id="archViewContent"></div>
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="btn-cancel" onclick="closeModal('modalArchView');openArchiveList()">← رجوع</button>
+      <button class="btn-ok" id="archRestoreBtn">استعادة ↩</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CLEAR ══════════════════════════════════════════════ -->
+<div class="modal-ov" id="modalClear" onclick="if(event.target===this)closeModal('modalClear')">
+  <div class="modal-box">
+    <div class="modal-title">🗑️ مسح البيانات</div>
+    <div class="modal-text">سيُمسح سجل الشهر الحالي فقط. الأرشيف لن يتأثر.</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalClear')">إلغاء</button>
+      <button class="btn-danger" onclick="confirmClear()">مسح نهائي</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT ERROR ════════════════════════════════════════ -->
+<div class="modal-ov" id="modalImportErr" onclick="if(event.target===this)closeModal('modalImportErr')">
+  <div class="modal-box">
+    <div class="modal-title">⚠️ خطأ في الاستيراد</div>
+    <div class="modal-text" id="importErrText"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modalImportErr')">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     FIREBASE v10 MODULAR SDK — loaded as ES module
+     ══════════════════════════════════════════════════════════ -->
+<script type="module">
+
+// ── Firebase imports ───────────────────────────────────────
+import { initializeApp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot, enableIndexedDbPersistence }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getAuth, GoogleAuthProvider,
+  signInWithPopup, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+// ══════════════════════════════════════════════════════════
+//  ① FIREBASE CONFIG — paste your credentials here
+// ══════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "AIzaSyDGqsDZhZrY1gBSTTFxWxXqgs65LhPu9_w",
+  authDomain:        "adkar-3f804.firebaseapp.com",
+  projectId:         "adkar-3f804",
+  storageBucket:     "adkar-3f804.firebasestorage.app",
+  messagingSenderId: "701602137513",
+  appId:             "1:701602137513:web:be08a53c49f7f2f6b630b8"
+};
+
+// ── Init Firebase ──────────────────────────────────────────
+const fbApp = initializeApp(firebaseConfig);
+const db    = getFirestore(fbApp);
+const auth  = getAuth(fbApp);
+
+// Enable IndexedDB offline persistence (PWA-grade offline support)
+try {
+  await enableIndexedDbPersistence(db);
+} catch (e) {
+  if (e.code === 'failed-precondition') {
+    console.warn('Firestore persistence: multiple tabs open.');
+  } else if (e.code === 'unimplemented') {
+    console.warn('Firestore persistence: browser unsupported.');
+  }
+}
+
+// Single document path: savings/global_state
+const STATE_REF = doc(db, "savings", "global_state");
+
+// ══════════════════════════════════════════════════════════
+//  CONSTANTS
+// ══════════════════════════════════════════════════════════
+const DFLT_AMT  = 10000;   // fixed daily default per person
+const CYCLE_LEN = 30;      // cycle length in days
+const MAX_INPUT = 100000;  // per-day input cap (10x default)
+const COLORS    = ['#818cf8','#fbbf24','#34d399','#f472b6','#60a5fa','#a78bfa'];
+const LS_KEY    = 'sav_mirror_v4';   // localStorage mirror — instant load + offline
+
+// ── localStorage helpers ───────────────────────────────────
+function lsSave(state) {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e) {}
+}
+function lsLoad() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+// ══════════════════════════════════════════════════════════
+//  STATE  (in-memory mirror of Firestore document)
+// ══════════════════════════════════════════════════════════
+let S = null;              // populated by onSnapshot
+let _tableSubCount = -1;   // track when table structure changes
+let _d = -1, _i = -1;     // active bottom-sheet cell
+
+// ══════════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════════
+const clr     = i => COLORS[i % COLORS.length];
+const fmt     = n => new Intl.NumberFormat('ar').format(Math.round(n));
+const subPaid = s => (s.log || []).reduce((a, b) => a + b, 0);
+const grandT  = () => (S.subs || []).reduce((a, s) => a + s.target, 0);
+const grandP  = () => (S.subs || []).reduce((a, s) => a + subPaid(s), 0);
+const hasData = () => (S.subs || []).some(s => (s.log || []).some(v => v > 0));
+
+const rgba = (hex, a) => {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+// ── Temporal helpers ───────────────────────────────────────
+/**
+ * Returns a Date for day index i (0-based) from S.startDate.
+ * Works correctly across month/year boundaries.
+ */
+function dayDate(i) {
+  if (!S?.startDate) return new Date();
+  const d = new Date(S.startDate + 'T00:00:00');
+  d.setDate(d.getDate() + i);
+  return d;
+}
+
+/** "20/3" formatted label for day index i */
+function dayLabel(i) {
+  const d = dayDate(i);
+  return `${d.getDate()}/${d.getMonth() + 1}`;
+}
+
+/** Returns 0-based index of today within the 30-day window, or -1 */
+function todayIndex() {
+  if (!S?.startDate) return -1;
+  const start = new Date(S.startDate + 'T00:00:00');
+  start.setHours(0,0,0,0);
+  const now = new Date(); now.setHours(0,0,0,0);
+  const diff = Math.round((now - start) / 86400000);
+  return (diff >= 0 && diff < CYCLE_LEN) ? diff : -1;
+}
+
+// Normalize/sanitize state from Firestore
+function normalizeState(raw) {
+  const today = new Date().toISOString().slice(0, 10);
+  const s = {
+    startDate: raw?.startDate || today,
+    archive:   Array.isArray(raw?.archive) ? raw.archive : [],
+    subs:      Array.isArray(raw?.subs) && raw.subs.length
+      ? raw.subs
+      : [
+          { name: 'الشخص الأول',  target: 300000, log: Array(CYCLE_LEN).fill(0) },
+          { name: 'الشخص الثاني', target: 300000, log: Array(CYCLE_LEN).fill(0) }
+        ]
+  };
+  // Ensure each sub has a clean, sanitized log
+  s.subs = s.subs.map(sub => ({
+    name:   typeof sub.name === 'string' ? sub.name : 'مشترك',
+    target: Math.max(Math.abs(Number(sub.target) || 300000), 1000),
+    log:    Array.isArray(sub.log)
+      ? sub.log.slice(0, CYCLE_LEN).map(v => Math.max(0, Math.min(MAX_INPUT, Math.abs(parseInt(v) || 0))))
+      : Array(CYCLE_LEN).fill(0)
+  }));
+  // Pad log arrays if shorter than CYCLE_LEN
+  s.subs.forEach(sub => {
+    while (sub.log.length < CYCLE_LEN) sub.log.push(0);
+  });
+  return s;
+}
+
+/** Deep clone — prevents archive mutations */
+const deepClone = obj => JSON.parse(JSON.stringify(obj));
+
+// ══════════════════════════════════════════════════════════
+//  ② FIRESTORE — onSnapshot (real-time read)
+// ══════════════════════════════════════════════════════════
+let unsubscribe = null;
+
+function startListening() {
+  // ── Layer 1: localStorage — instant render (< 50ms) ──────
+  const cached = lsLoad();
+  if (cached) {
+    S = normalizeState(cached);
+    _tableSubCount = -1;
+    render();
+    hideLoading();
+    setSyncStatus('saving');   // Firebase still loading
+  }
+
+  // ── Layer 2: Firestore — source of truth ─────────────────
+  unsubscribe = onSnapshot(
+    STATE_REF,
+    (docSnap) => {
+      try {
+        const fresh = normalizeState(docSnap.exists() ? docSnap.data() : {});
+        S = fresh;
+        lsSave(S);             // keep mirror in sync
+        _tableSubCount = -1;
+        render();
+        hideLoading();
+        setSyncStatus('synced');
+      } catch (err) {
+        console.error('onSnapshot handler error:', err);
+        showError('خطأ في معالجة البيانات: ' + err.message);
+      }
+    },
+    (error) => {
+      console.error('Firestore onSnapshot error:', error);
+      setSyncStatus('offline');
+      showError('تعذّر الاتصال بـ Firebase: ' + error.message);
+      // If LS already painted the UI, don't show the loader again
+      if (!S) hideLoading();
+    }
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+//  ③ FIRESTORE — setDoc (write)
+// ══════════════════════════════════════════════════════════
+async function save() {
+  if (!S) return;
+  lsSave(S);           // Layer 1: write locally first → instant feedback
+  setSyncStatus('saving');
+  try {
+    await setDoc(STATE_REF, deepClone(S));
+    // onSnapshot callback sets 'synced' once Firestore confirms
+  } catch (err) {
+    console.error('setDoc error:', err);
+    setSyncStatus('offline');
+    showError('فشل الحفظ في السحاب — البيانات محفوظة محلياً: ' + err.message);
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER ORCHESTRATOR
+// ══════════════════════════════════════════════════════════
+function render() {
+  if (!S) return;
+  renderGrand();
+  renderSubCards();
+  renderTableIfNeeded();
+  updateAllCells();
+  highlightToday();
+  renderChart();
+  document.getElementById('archBtnH').style.display =
+    S.archive?.length ? '' : 'none';
+}
+
+// ── Grand Progress ─────────────────────────────────────────
+function renderGrand() {
+  const gt = grandT(), gp = grandP();
+  const pct = gt > 0 ? Math.min(gp / gt * 100, 100) : 0;
+  const doneDays = Array.from({ length: CYCLE_LEN }, (_, i) =>
+    S.subs.every(s => (s.log[i] || 0) > 0)
+  ).filter(Boolean).length;
+
+  document.getElementById('grandPaid').innerHTML     = `${fmt(gp)} <small>ل.س</small>`;
+  document.getElementById('grandTarget').textContent = fmt(gt);
+  document.getElementById('grandPct').textContent    = pct.toFixed(1) + '%';
+  document.getElementById('grandBar').style.width    = pct + '%';
+  document.getElementById('grandRemain').textContent = fmt(Math.max(gt - gp, 0));
+  document.getElementById('grandDaysLeft').textContent =
+    `${CYCLE_LEN - doneDays} يوماً متبقٍ`;
+
+  // Date range in subtitle
+  document.getElementById('hdrSub').textContent =
+    S.startDate ? `${dayLabel(0)} ← ${dayLabel(CYCLE_LEN - 1)}` : '—';
+}
+
+// ── Subscriber Cards ───────────────────────────────────────
+function renderSubCards() {
+  const wrap = document.getElementById('subCards');
+  wrap.innerHTML = '';
+  S.subs.forEach((sub, i) => {
+    const paid   = subPaid(sub);
+    const pct    = Math.min(paid / sub.target * 100, 100);
+    const pDays  = sub.log.filter(v => v > 0).length;
+    const missed = CYCLE_LEN - pDays;
+    const c      = clr(i);
+    const card   = document.createElement('div');
+    card.className = 'sub-card';
+    card.style.borderTopColor = c;
+    card.innerHTML = `
+      <div class="sub-name-row">
+        <div class="sub-name" style="color:${c}" id="sn${i}" onclick="editName(${i})">
+          <span id="snT${i}">${sub.name}</span>
+          <span style="opacity:.3;font-size:.58rem">✏️</span>
+        </div>
+        ${S.subs.length > 1
+          ? `<button class="sub-del" onclick="delUser(${i})" title="حذف">✕</button>`
+          : ''}
+      </div>
+      <div class="sub-amount" style="color:${c}">${fmt(paid)}</div>
+      <div class="sub-of">من ${fmt(sub.target)} ل.س</div>
+      <input class="sub-target-inp"
+        value="${fmt(sub.target)}"
+        style="border-color:${rgba(c,.22)}"
+        title="اضغط لتعديل الهدف"
+        onblur="saveTarget(${i}, this.value)"
+        onkeydown="if(event.key==='Enter') this.blur()">
+      <div class="sub-bar">
+        <div class="sub-bar-fill" style="width:${pct}%;background:${c}"></div>
+      </div>
+      <div class="chips">
+        <span class="chip chip-n">${pct.toFixed(0)}%</span>
+        <span class="chip chip-ok">✓ ${pDays}</span>
+        ${missed > 0 ? `<span class="chip chip-bad">✗ ${missed}</span>` : ''}
+        <span class="chip chip-n">10,000/يوم</span>
+      </div>`;
+    wrap.appendChild(card);
+  });
+}
+
+function saveTarget(i, raw) {
+  const v = Math.max(Math.abs(parseInt(raw.replace(/\D/g, '')) || S.subs[i].target), 1000);
+  S.subs[i].target = v;
+  save();
+}
+
+function editName(i) {
+  const wrap = document.getElementById(`sn${i}`);
+  const c    = clr(i);
+  wrap.onclick = null;
+  const inp  = document.createElement('input');
+  inp.className = 'sub-name-inp';
+  inp.style.color = c;
+  inp.style.borderBottomColor = c;
+  inp.value = S.subs[i].name;
+  wrap.innerHTML = '';
+  wrap.appendChild(inp);
+  inp.focus();
+  inp.select();
+  const done = () => {
+    S.subs[i].name = inp.value.trim() || S.subs[i].name;
+    save();
+    render();
+  };
+  inp.addEventListener('blur', done);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); });
+}
+
+// ══════════════════════════════════════════════════════════
+//  TABLE — build once, patch cells by ID
+// ══════════════════════════════════════════════════════════
+function renderTableIfNeeded() {
+  if (_tableSubCount === S.subs.length) {
+    // Only update header names (may have changed)
+    S.subs.forEach((sub, i) => {
+      const th = document.querySelector(`#logHead th[data-col="${i}"]`);
+      if (th) { th.textContent = sub.name; th.style.color = clr(i); }
+    });
+    return;
+  }
+  _tableSubCount = S.subs.length;
+  buildTable();
+}
+
+function buildTable() {
+  // ── Header ──
+  const thead = document.getElementById('logHead');
+  thead.innerHTML = `<th class="th-day">يوم</th>`;
+  S.subs.forEach((sub, i) => {
+    const th = document.createElement('th');
+    th.textContent = sub.name;
+    th.style.color = clr(i);
+    th.setAttribute('data-col', i);
+    thead.appendChild(th);
+  });
+
+  // ── Body (DocumentFragment — single reflow) ──
+  const tb   = document.getElementById('logBody');
+  tb.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  for (let d2 = 0; d2 < CYCLE_LEN; d2++) {
+    const tr = document.createElement('tr');
+    tr.id = `row-${d2}`;
+
+    // Week separator — bottom border after days 7, 14, 21
+    if (d2 > 0 && d2 % 7 === 0) tr.classList.add('week-sep');
+
+    // Sticky day column — day number + date + week label
+    const weekNum  = Math.floor(d2 / 7) + 1;
+    const isFirst  = d2 % 7 === 0;
+    const tdN = document.createElement('td');
+    tdN.className = 'td-day';
+    if (isFirst) tdN.classList.add('week-label');
+    if (isFirst) tdN.setAttribute('data-week', `أ${weekNum}`);
+    tdN.innerHTML = `
+      <div class="td-day-num">${d2 + 1}</div>
+      <div class="td-day-date">${dayLabel(d2)}</div>`;
+    tr.appendChild(tdN);
+
+    // Per-subscriber cells
+    S.subs.forEach((_, i) => {
+      const td   = document.createElement('td');
+      const cell = document.createElement('div');
+      cell.className = 'day-cell unpaid';
+      cell.id = `c-${d2}-${i}`;
+      attachCellEvents(cell, d2, i);
+      td.appendChild(cell);
+      tr.appendChild(td);
+    });
+    frag.appendChild(tr);
+  }
+  tb.appendChild(frag);
+}
+
+// ── Targeted cell update — no DOM rebuild ─────────────────
+function updateCell(d2, i) {
+  const cell = document.getElementById(`c-${d2}-${i}`);
+  const sub  = S.subs[i];
+  if (!cell || !sub) return;
+  const v    = sub.log[d2] || 0;
+  const c    = clr(i);
+  const ti   = todayIndex();
+  const isPast = ti >= 0 ? d2 < ti : false;   // day passed without payment
+
+  if (v > 0) {
+    cell.className = 'day-cell paid';
+    cell.style.background = rgba(c, 0.15);
+    cell.style.color = v >= DFLT_AMT ? c : 'var(--warn)';
+    cell.textContent = fmt(v);
+  } else if (isPast) {
+    // Past day with no payment — red tint reminder
+    cell.className = 'day-cell unpaid missed-past';
+    cell.style.background = '';
+    cell.style.color = '';
+    cell.textContent = '✗';
+  } else {
+    cell.className = 'day-cell unpaid';
+    cell.style.background = 'transparent';
+    cell.style.color = 'var(--dim)';
+    cell.textContent = '—';
+  }
+}
+
+function updateAllCells() {
+  for (let d2 = 0; d2 < CYCLE_LEN; d2++)
+    S.subs.forEach((_, i) => updateCell(d2, i));
+}
+
+// Today red indicator
+function highlightToday() {
+  document.querySelectorAll('.today-row').forEach(r => r.classList.remove('today-row'));
+  const ti = todayIndex();
+  if (ti >= 0) {
+    const row = document.getElementById(`row-${ti}`);
+    if (row) row.classList.add('today-row');
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  CELL EVENTS
+//  click     → bottom sheet (review / custom amount)
+//  dblclick  → instant DFLT_AMT (zero friction)
+// ══════════════════════════════════════════════════════════
+function attachCellEvents(cell, d2, i) {
+  let dblFlag = false;
+
+  cell.addEventListener('dblclick', e => {
+    e.preventDefault();
+    dblFlag = true;
+    if (navigator.vibrate) navigator.vibrate(30);
+    applyDefault(d2, i);
+    setTimeout(() => { dblFlag = false; }, 400);
+  });
+
+  cell.addEventListener('click', () => {
+    if (!dblFlag) openSheet(d2, i);
+  });
+
+  cell.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+function applyDefault(d2, i) {
+  S.subs[i].log[d2] = DFLT_AMT;
+  save();
+  updateCell(d2, i);
+  renderGrand();
+  renderSubCards();
+  renderChart();
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOTTOM SHEET
+// ══════════════════════════════════════════════════════════
+function openSheet(d2, i) {
+  _d = d2; _i = i;
+  const sub = S.subs[i];
+  const v   = sub.log[d2] || 0;
+  const c   = clr(i);
+
+  document.getElementById('sheetTitle').textContent =
+    `يوم ${d2 + 1}  •  ${dayLabel(d2)}  —  ${sub.name}`;
+  document.getElementById('sheetHint').textContent =
+    v > 0 ? `المدفوع: ${fmt(v)} ل.س` : 'لم يُسجَّل دفع — نقرتان لـ 10,000 فوراً';
+
+  const btn = document.getElementById('sheetDefBtn');
+  btn.textContent = `✓ تأكيد الافتراضي  (${fmt(DFLT_AMT)} ل.س)`;
+  btn.style.background = c;
+
+  document.getElementById('sheetClearBtn').style.display = v > 0 ? '' : 'none';
+  document.getElementById('sheetInp').value = '';
+  document.getElementById('sheet').classList.add('open');
+  setTimeout(() => document.getElementById('sheetInp').focus(), 280);
+}
+
+function closeSheet() { document.getElementById('sheet').classList.remove('open'); }
+
+function confirmDefault() { applyDefault(_d, _i); closeSheet(); }
+
+function confirmCustom() {
+  const raw = document.getElementById('sheetInp').value.replace(/\D/g, '');
+  const v   = Math.abs(parseInt(raw) || 0);
+  if (!v) { document.getElementById('sheetInp').focus(); return; }
+  S.subs[_i].log[_d] = Math.min(v, MAX_INPUT);
+  save();
+  updateCell(_d, _i);
+  renderGrand();
+  renderSubCards();
+  renderChart();
+  closeSheet();
+}
+
+function clearDay() {
+  S.subs[_i].log[_d] = 0;
+  save();
+  updateCell(_d, _i);
+  renderGrand();
+  renderSubCards();
+  renderChart();
+  closeSheet();
+}
+
+// ══════════════════════════════════════════════════════════
+//  SETTINGS
+// ══════════════════════════════════════════════════════════
+function openSettings() {
+  const locked = hasData();
+  const inp    = document.getElementById('startDateInp');
+  const lock   = document.getElementById('startDateLock');
+  const savBtn = document.getElementById('settingsSaveBtn');
+  inp.value       = S.startDate || '';
+  inp.disabled    = locked;
+  savBtn.disabled = locked;
+  lock.style.display = locked ? '' : 'none';
+  openModal('modalSettings');
+}
+
+function saveSettings() {
+  const v = document.getElementById('startDateInp').value;
+  if (!v) return;
+  S.startDate    = v;
+  _tableSubCount = -1;   // force full table rebuild with new dates
+  save();
+  closeModal('modalSettings');
+  // table will rebuild on next render(), triggered by onSnapshot
+}
+
+// expose to HTML onclick (module scope doesn't auto-expose)
+window.openSettings = openSettings;
+
+// ══════════════════════════════════════════════════════════
+//  ADD / REMOVE SUBSCRIBERS
+// ══════════════════════════════════════════════════════════
+function openAddUser() {
+  document.getElementById('newUserName').value   = '';
+  document.getElementById('newUserTarget').value = '';
+  openModal('modalAddUser');
+  setTimeout(() => document.getElementById('newUserName').focus(), 180);
+}
+
+function confirmAddUser() {
+  const name = document.getElementById('newUserName').value.trim();
+  if (!name) { document.getElementById('newUserName').focus(); return; }
+  const raw    = document.getElementById('newUserTarget').value.replace(/\D/g, '');
+  const target = Math.max(Math.abs(parseInt(raw) || 300000), 1000);
+  S.subs.push({ name, target, log: Array(CYCLE_LEN).fill(0) });
+  _tableSubCount = -1;
+  save();
+  closeModal('modalAddUser');
+}
+
+function delUser(i) {
+  if (S.subs.length <= 1) return;
+  if (!confirm(`حذف "${S.subs[i].name}" وكل بياناته؟`)) return;
+  S.subs.splice(i, 1);
+  _tableSubCount = -1;
+  save();
+}
+
+window.openAddUser    = openAddUser;
+window.confirmAddUser = confirmAddUser;
+window.delUser        = delUser;
+window.editName       = editName;
+window.saveTarget     = saveTarget;
+
+// ══════════════════════════════════════════════════════════
+//  CHART
+// ══════════════════════════════════════════════════════════
+let chart = null;
+
+function buildChart() {
+  const ctx = document.getElementById('myChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: Array.from({ length: CYCLE_LEN }, (_, i) => i + 1), datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      animation: false,
+      plugins: {
+        legend: {
+          labels: {
+            color: 'rgba(255,255,255,.45)',
+            font: { family: 'Cairo', size: 10 },
+            boxWidth: 10, padding: 11,
+            filter: item => !item.text.startsWith('__')
+          }
+        },
+        tooltip: {
+          backgroundColor: '#0f0f22',
+          borderColor: 'rgba(255,255,255,.08)',
+          borderWidth: 1,
+          titleFont: { family: 'Cairo', size: 11 },
+          bodyFont:  { family: 'Cairo', size: 11 },
+          callbacks: {
+            label: ctx => ctx.dataset.label.startsWith('__')
+              ? null
+              : ` ${ctx.dataset.label}: ${fmt(ctx.raw)} ل.س`
+          },
+          filter: item => !item.dataset.label.startsWith('__')
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: 'rgba(255,255,255,.3)', font: { family: 'Cairo', size: 9 } },
+          grid:  { color: 'rgba(255,255,255,.03)' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: 'rgba(255,255,255,.3)',
+            font:  { family: 'Cairo', size: 9 },
+            callback: v => v >= 1000 ? (v / 1000) + 'k' : v
+          },
+          grid: { color: 'rgba(255,255,255,.03)' }
+        }
+      }
+    }
+  });
+}
+
+function renderChart() {
+  if (!chart || !S) return;
+  const datasets = [];
+  S.subs.forEach((sub, i) => {
+    let cum = 0;
+    const actual = sub.log.map(v => { cum += v; return cum; });
+    datasets.push({
+      label:           sub.name,
+      data:            actual,
+      borderColor:     clr(i),
+      backgroundColor: rgba(clr(i), .07),
+      borderWidth: 2.5, fill: true, tension: .4,
+      pointRadius: 0, pointHoverRadius: 4
+    });
+    // Expected line (10,000 * day)
+    datasets.push({
+      label:       `__exp${i}`,
+      data:        Array.from({ length: CYCLE_LEN }, (_, j) => (j + 1) * DFLT_AMT),
+      borderColor: rgba(clr(i), .28),
+      borderWidth: 1, borderDash: [5, 4],
+      fill: false, tension: 0, pointRadius: 0
+    });
+  });
+  chart.data.datasets = datasets;
+  chart.update('none');
+}
+
+// ══════════════════════════════════════════════════════════
+//  ④ ARCHIVE — deep copy (snapshot) before clearing
+// ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+//  END-OF-MONTH REPORT
+// ══════════════════════════════════════════════════════════
+function openArchiveConfirm() {
+  buildReport(S.subs);   // populate report modal
+  openModal('modalReport');
+}
+
+function openArchiveConfirmStep2() {
+  document.getElementById('archLabelInp').value = '';
+  openModal('modalArchiveConfirm');
+  setTimeout(() => document.getElementById('archLabelInp').focus(), 180);
+}
+window.openArchiveConfirmStep2 = openArchiveConfirmStep2;
+
+function buildReport(subs) {
+  const gp  = grandP(), gt = grandT();
+  const pct = gt > 0 ? (gp / gt * 100).toFixed(1) : 0;
+
+  // Subtitle
+  document.getElementById('reportSubtitle').textContent =
+    `${dayLabel(0)} ← ${dayLabel(CYCLE_LEN - 1)}`;
+
+  // Grand stats grid
+  const doneDays = Array.from({ length: CYCLE_LEN }, (_, i) =>
+    subs.every(s => (s.log[i] || 0) > 0)
+  ).filter(Boolean).length;
+  document.getElementById('reportGrandStats').innerHTML = `
+    <div class="report-stat">
+      <div class="report-stat-val" style="color:#34d399">${fmt(gp)}</div>
+      <div class="report-stat-lbl">ل.س مدفوعة</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-val" style="color:#818cf8">${pct}%</div>
+      <div class="report-stat-lbl">نسبة الإنجاز</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-val" style="color:#4ade80">${doneDays}</div>
+      <div class="report-stat-lbl">يوم مكتمل</div>
+    </div>
+    <div class="report-stat">
+      <div class="report-stat-val" style="color:#f87171">${CYCLE_LEN - doneDays}</div>
+      <div class="report-stat-lbl">يوم ناقص</div>
+    </div>`;
+
+  // Per-person breakdown
+  const personsEl = document.getElementById('reportPersons');
+  personsEl.innerHTML = '';
+  subs.forEach((sub, i) => {
+    const paid   = subPaid(sub);
+    const pctP   = Math.min(paid / sub.target * 100, 100);
+    const pDays  = sub.log.filter(v => v > 0).length;
+    const missed = CYCLE_LEN - pDays;
+    const extra  = sub.log.reduce((a, v) => a + Math.max(0, v - DFLT_AMT), 0);
+    const c      = clr(i);
+    const div    = document.createElement('div');
+    div.className = 'report-person';
+    div.style.borderRightColor = c;
+    div.innerHTML = `
+      <div class="report-person-name" style="color:${c}">
+        ${sub.name}
+        <span style="float:left;font-size:.75rem;color:var(--sub);font-weight:400">${fmt(paid)} / ${fmt(sub.target)} ل.س</span>
+      </div>
+      <div class="report-bar-wrap">
+        <div class="report-bar-fill" style="width:${pctP}%;background:${c}"></div>
+      </div>
+      <div class="report-chips">
+        <span class="chip chip-n">${pctP.toFixed(0)}%</span>
+        <span class="chip chip-ok">✓ ${pDays} يوم</span>
+        ${missed > 0 ? `<span class="chip chip-bad">✗ ${missed} متأخر</span>` : '<span class="chip chip-ok">لا تأخر 🎉</span>'}
+        ${extra > 0 ? `<span class="chip" style="background:rgba(129,140,248,.1);color:#818cf8">+${fmt(extra)} إضافي</span>` : ''}
+      </div>`;
+    personsEl.appendChild(div);
+  });
+
+  // Weekly breakdown (best/worst week per first subscriber)
+  const weeksEl = document.getElementById('reportWeeks');
+  weeksEl.innerHTML = '';
+  for (let w = 0; w < 4; w++) {
+    const start = w * 7;
+    const end   = Math.min(start + 7, CYCLE_LEN);
+    const weekPaid = subs.reduce((total, sub) =>
+      total + sub.log.slice(start, end).reduce((a, b) => a + b, 0), 0
+    );
+    const weekTarget = subs.length * 7 * DFLT_AMT;
+    const weekPct    = Math.min((weekPaid / weekTarget * 100), 100).toFixed(0);
+    const weekColor  = weekPct >= 80 ? '#4ade80' : weekPct >= 50 ? '#fbbf24' : '#f87171';
+    weeksEl.innerHTML += `
+      <div class="report-week-cell">
+        <div class="report-week-cell-lbl">أ${w + 1}</div>
+        <div class="report-week-cell-val" style="color:${weekColor}">${weekPct}%</div>
+        <div style="font-size:.55rem;color:var(--dim);margin-top:2px">${fmt(weekPaid)}</div>
+      </div>`;
+  }
+}
+
+function confirmArchive() {
+  const label = document.getElementById('archLabelInp').value.trim()
+              || `دورة ${dayLabel(0)} → ${dayLabel(CYCLE_LEN - 1)}`;
+
+  // Deep copy of current state (names, targets, all amounts)
+  const snapshot = {
+    label,
+    date:      new Date().toLocaleDateString('ar'),
+    startDate: S.startDate,
+    subs:      deepClone(S.subs)   // ← deep clone prevents reference mutation
+  };
+  S.archive.push(snapshot);
+
+  // Advance startDate to next cycle
+  const next = new Date(S.startDate + 'T00:00:00');
+  next.setDate(next.getDate() + CYCLE_LEN);
+  S.startDate = next.toISOString().slice(0, 10);
+
+  // Reset logs only
+  S.subs.forEach(s => { s.log = Array(CYCLE_LEN).fill(0); });
+  _tableSubCount = -1;
+
+  save();
+  closeModal('modalArchiveConfirm');
+}
+
+function openArchiveList() {
+  const el = document.getElementById('archListContent');
+  el.innerHTML = '';
+  if (!S.archive?.length) {
+    el.innerHTML = '<div style="color:var(--sub);font-size:.8rem;text-align:center;padding:18px">لا يوجد أرشيف بعد</div>';
+  } else {
+    S.archive.forEach((m, i) => {
+      const tp  = m.subs.reduce((s, sub) => s + sub.log.reduce((a, b) => a + b, 0), 0);
+      const tt  = m.subs.reduce((s, sub) => s + sub.target, 0);
+      const pct = tt > 0 ? (tp / tt * 100).toFixed(0) : 0;
+      const div = document.createElement('div');
+      div.className = 'arch-item';
+      div.innerHTML = `
+        <div class="arch-item-title">📁 ${m.label}</div>
+        <div class="arch-item-meta">${m.date} • ${fmt(tp)} / ${fmt(tt)} ل.س • ${pct}%</div>
+        <div class="arch-item-btns">
+          <button onclick="viewArchive(${i})">عرض</button>
+          <button onclick="restoreArchive(${i})" style="color:#fbbf24;border-color:rgba(251,191,36,.2)">استعادة ↩</button>
+          <button onclick="deleteArchive(${i})" style="color:#f87171;border-color:rgba(248,113,113,.2)">حذف</button>
+        </div>`;
+      el.appendChild(div);
+    });
+  }
+  openModal('modalArchList');
+}
+
+function viewArchive(i) {
+  const m   = S.archive[i];
+  const tp  = m.subs.reduce((s, sub) => s + sub.log.reduce((a, b) => a + b, 0), 0);
+  const tt  = m.subs.reduce((s, sub) => s + sub.target, 0);
+  document.getElementById('archViewTitle').textContent = '📁 ' + m.label;
+  document.getElementById('archViewMeta').textContent  =
+    `${m.date} • ${fmt(tp)} / ${fmt(tt)} ل.س`;
+  let html = '';
+  m.subs.forEach((sub, si) => {
+    const c    = clr(si);
+    const paid = sub.log.reduce((a, b) => a + b, 0);
+    html += `<div style="margin-bottom:14px">
+      <div style="font-size:.84rem;font-weight:700;color:${c};margin-bottom:6px">
+        ${sub.name}: ${fmt(paid)} ل.س
+      </div>
+      <div class="arch-view-grid">`;
+    sub.log.forEach((v, d2) => {
+      html += `<div class="arch-cell" style="${v > 0 ? `background:${rgba(c, .14)}` : ''}">
+        <div class="arch-cell-day">${d2 + 1}</div>
+        <div class="arch-cell-val" style="color:${v > 0 ? c : 'var(--dim)'}">
+          ${v > 0 ? fmt(v) : '—'}
+        </div>
+      </div>`;
+    });
+    html += '</div></div>';
+  });
+  document.getElementById('archViewContent').innerHTML = html;
+  document.getElementById('archRestoreBtn').onclick = () => restoreArchive(i);
+  closeModal('modalArchList');
+  openModal('modalArchView');
+}
+
+function restoreArchive(i) {
+  const m = S.archive[i];
+  if (!confirm(`استعادة "${m.label}"؟\nسيُحفظ الشهر الحالي في الأرشيف أولاً.`)) return;
+
+  // Archive current (deep clone)
+  S.archive.push({
+    label:     `دورة ${dayLabel(0)} → ${dayLabel(CYCLE_LEN-1)} (مؤرشف تلقائياً)`,
+    date:      new Date().toLocaleDateString('ar'),
+    startDate: S.startDate,
+    subs:      deepClone(S.subs)
+  });
+
+  // Restore archived (deep clone to avoid cross-reference)
+  S.subs      = deepClone(m.subs);
+  S.startDate = m.startDate || S.startDate;
+  S.archive.splice(i, 1);
+  _tableSubCount = -1;
+
+  save();
+  closeModal('modalArchView');
+  closeModal('modalArchList');
+}
+
+function deleteArchive(i) {
+  if (!confirm(`حذف الأرشيف "${S.archive[i].label}" نهائياً؟`)) return;
+  S.archive.splice(i, 1);
+  save();
+  openArchiveList();
+}
+
+// Expose archive functions to HTML onclick
+window.openArchiveList    = openArchiveList;
+window.viewArchive        = viewArchive;
+window.restoreArchive     = restoreArchive;
+window.deleteArchive      = deleteArchive;
+window.openArchiveConfirm = openArchiveConfirm;
+window.confirmArchive     = confirmArchive;
+
+// ══════════════════════════════════════════════════════════
+//  CLEAR
+// ══════════════════════════════════════════════════════════
+function confirmClear() {
+  S.subs.forEach(s => { s.log = Array(CYCLE_LEN).fill(0); });
+  _tableSubCount = -1;
+  save();
+  closeModal('modalClear');
+}
+window.confirmClear = confirmClear;
+
+// ══════════════════════════════════════════════════════════
+//  EXPORT / IMPORT (local backup)
+// ══════════════════════════════════════════════════════════
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `savings_${S.startDate || 'backup'}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function triggerImport() {
+  document.getElementById('importFile').value = '';
+  document.getElementById('importFile').click();
+}
+
+function importJSON(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = evt => {
+    try {
+      const parsed = JSON.parse(evt.target.result);
+      // Validate
+      if (!parsed?.subs || !Array.isArray(parsed.subs))
+        throw new Error('الملف لا يحتوي على بيانات صحيحة.');
+      parsed.subs.forEach((s, i) => {
+        if (typeof s.name !== 'string')
+          throw new Error(`اسم المشترك ${i + 1} غير صحيح.`);
+        if (!s.target || s.target <= 0)
+          throw new Error(`هدف المشترك ${i + 1} غير صحيح.`);
+        if (!Array.isArray(s.log))
+          throw new Error(`سجل المشترك ${i + 1} غير صحيح.`);
+      });
+      // Sanitize then write
+      S = normalizeState(parsed);
+      _tableSubCount = -1;
+      save();
+    } catch (err) {
+      document.getElementById('importErrText').textContent = err.message;
+      openModal('modalImportErr');
+    }
+  };
+  reader.readAsText(file);
+}
+
+window.exportJSON    = exportJSON;
+window.triggerImport = triggerImport;
+window.importJSON    = importJSON;
+
+// ══════════════════════════════════════════════════════════
+//  MODAL HELPERS
+// ══════════════════════════════════════════════════════════
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+window.openModal  = openModal;
+window.closeModal = closeModal;
+
+// Expose sheet controls
+window.closeSheet      = closeSheet;
+window.confirmDefault  = confirmDefault;
+window.confirmCustom   = confirmCustom;
+window.clearDay        = clearDay;
+window.saveSettings    = saveSettings;
+
+// ══════════════════════════════════════════════════════════
+//  UI STATE HELPERS
+// ══════════════════════════════════════════════════════════
+function setSyncStatus(st) {
+  const el = document.getElementById('syncDot');
+  if (!el) return;
+  el.className = 'sync-dot ' + st;
+  el.title = { synced: 'محفوظ ☁️', saving: 'جاري الحفظ...', offline: 'غير متصل ⚠️' }[st] || '';
+}
+
+function hideLoading() {
+  showScreen('app');
+}
+
+function showError(msg) {
+  const banner = document.getElementById('conn-banner');
+  banner.textContent = '⚠️ ' + msg;
+  banner.style.display = 'block';
+  setTimeout(() => { banner.style.display = 'none'; }, 6000);
+}
+
+// Online/offline detection
+window.addEventListener('offline', () => {
+  setSyncStatus('offline');
+  document.getElementById('conn-banner').style.display = 'block';
+  document.getElementById('conn-banner').textContent =
+    '⚠️ غير متصل — البيانات تُحفظ محلياً وتُرفع عند عودة الإنترنت';
+});
+window.addEventListener('online', () => {
+  setSyncStatus('synced');
+  document.getElementById('conn-banner').style.display = 'none';
+});
+
+// ══════════════════════════════════════════════════════════
+//  AUTH — Google Sign-In
+// ══════════════════════════════════════════════════════════
+function showScreen(name) {
+  document.getElementById('screen-login').classList.toggle('visible', name === 'login');
+  document.getElementById('overlay-loading').style.display = name === 'loading' ? 'flex' : 'none';
+  document.getElementById('app').style.display = name === 'app' ? 'block' : 'none';
+}
+
+async function signInGoogle() {
+  const btn = document.getElementById('btnGoogle');
+  const err = document.getElementById('loginErr');
+  btn.disabled = true;
+  err.textContent = '';
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+    // onAuthStateChanged will handle the rest
+  } catch (e) {
+    err.textContent = 'فشل تسجيل الدخول: ' + (e.message || e.code);
+    btn.disabled = false;
+  }
+}
+
+function signOutUser() {
+  if (confirm('تسجيل الخروج؟')) {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    S = null;
+    signOut(auth);
+  }
+}
+window.signInGoogle = signInGoogle;
+window.signOutUser  = signOutUser;
+
+// Auth state observer — single source of truth for UI flow
+onAuthStateChanged(auth, user => {
+  if (user) {
+    // Update avatar
+    const av = document.getElementById('userAvatar');
+    if (av) {
+      if (user.photoURL) {
+        av.style.backgroundImage = `url(${user.photoURL})`;
+        av.textContent = '';
+      } else {
+        av.textContent = user.displayName?.[0] || '👤';
+      }
+      av.title = `${user.displayName || user.email} — اضغط للخروج`;
+    }
+    showScreen('loading');
+    buildChart();
+    startListening();
+  } else {
+    // Signed out — show login
+    showScreen('login');
+    document.getElementById('btnGoogle').disabled = false;
+  }
+});
+
+// ══════════════════════════════════════════════════════════
+//  INIT — auth observer handles everything above
+// ══════════════════════════════════════════════════════════
+// (No manual init needed — onAuthStateChanged fires on load)
+
+</script>
+</body>
+</html>
