@@ -197,9 +197,120 @@ body {
 .day-cell.readonly { cursor:default; }
 .day-cell:not(.readonly):hover  { filter:brightness(1.25); }
 .day-cell:not(.readonly):active { transform:scale(.93); }
-.day-cell.unpaid { color:var(--dim); }
-.day-cell.paid   { color:var(--text); }
-.day-cell.missed-past { background:rgba(248,113,113,.07)!important; color:rgba(248,113,113,.55)!important; border:1px dashed rgba(248,113,113,.2); }
+/* ── Day-cell semantic states ────────────────────
+   All visual state is driven by class alone —
+   no more inline background/color in JS.
+   ─────────────────────────────────────────── */
+
+/* Genuine progress — paid day that moved the needle */
+.day-cell.dc-progress {
+  background: rgba(74,222,128,.13);
+  color: #4ade80;
+  border: 1px solid rgba(74,222,128,.28);
+}
+
+/* Debt clearance — paid day that went toward erasing debt */
+.day-cell.dc-debt {
+  background: rgba(251,191,36,.10);
+  color: #fbbf24;
+  border: 1px solid rgba(251,191,36,.28);
+}
+
+/* Mixed: payment covered some debt AND some progress */
+.day-cell.dc-mixed {
+  background: rgba(129,140,248,.10);
+  color: #a5b4fc;
+  border: 1px solid rgba(129,140,248,.25);
+}
+
+/* Missed past day — no payment was made */
+.day-cell.dc-missed {
+  background: rgba(248,113,113,.07);
+  color: rgba(248,113,113,.6);
+  border: 1px dashed rgba(248,113,113,.28);
+}
+
+/* Today — not yet paid */
+.day-cell.dc-today {
+  background: transparent;
+  color: var(--today-acc);
+  border: 1px solid rgba(239,68,68,.45);
+}
+
+/* Future — day hasn't arrived yet */
+.day-cell.dc-future {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid transparent;
+  opacity: .45;
+  cursor: default !important;
+  pointer-events: none;
+}
+
+/* Small badge inside paid cells */
+.dc-badge {
+  display: block;
+  font-size: .5rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .75;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+/* ── Shared cell tooltip ─────────────────────────
+   Single floating element repositioned by JS.
+   Uses fixed positioning so it escapes overflow
+   hidden containers like the scrollable table.
+   ─────────────────────────────────────────── */
+#cellTip {
+  position: fixed;
+  z-index: 500;
+  pointer-events: none;  /* never blocks clicks */
+  padding: 9px 12px;
+  background: #12122a;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 10px;
+  min-width: 140px;
+  max-width: 200px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.55);
+  font-family: 'Cairo', sans-serif;
+  /* hidden by default */
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .15s, transform .15s;
+}
+#cellTip.tip-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.tip-amount {
+  font-size: .88rem;
+  font-weight: 900;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.tip-type {
+  font-size: .69rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+.tip-type.tp-progress { background: rgba(74,222,128,.14);  color: #4ade80; }
+.tip-type.tp-debt     { background: rgba(251,191,36,.14);  color: #fbbf24; }
+.tip-type.tp-mixed    { background: rgba(129,140,248,.14); color: #a5b4fc; }
+.tip-type.tp-missed   { background: rgba(248,113,113,.14); color: #f87171; }
+.tip-type.tp-today    { background: rgba(239,68,68,.14);   color: var(--today-acc); }
+.tip-type.tp-future   { background: rgba(255,255,255,.06); color: var(--dim); }
+.tip-detail {
+  font-size: .67rem;
+  color: var(--sub);
+  line-height: 1.55;
+  margin-top: 3px;
+}
 
 /* ── Week separator ────────────────────────────── */
 .week-sep td { border-bottom:2px solid rgba(255,255,255,.13)!important; }
@@ -244,6 +355,81 @@ body {
 .sheet-inp:focus { border-color:rgba(255,255,255,.26); }
 .sheet-save  { padding:12px 15px; border-radius:10px; border:none; background:rgba(255,255,255,.08); color:var(--text); font-family:inherit; font-size:.82rem; font-weight:700; cursor:pointer; }
 .sheet-clear { width:100%; padding:9px; border-radius:10px; border:1px solid rgba(248,113,113,.2); background:rgba(248,113,113,.07); color:#f87171; font-family:inherit; font-size:.76rem; font-weight:700; cursor:pointer; }
+
+/* ── Debt warning row inside bottom sheet ──────
+   Shows when the payer has outstanding debt.
+   Sits between the hint text and the pay button.
+   Hidden by default; JS removes .hidden.         */
+.sheet-debt-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(251,191,36,.08);
+  border: 1px solid rgba(251,191,36,.22);
+  margin-bottom: 11px;
+  font-size: .74rem;
+  font-weight: 700;
+  color: #fbbf24;
+  line-height: 1.55;
+}
+.sheet-debt-warn.hidden { display: none; }
+.sheet-debt-warn svg    { flex-shrink: 0; margin-top: 1px; }
+
+/* ── Payment feedback toast ─────────────────────
+   Fixed pill that slides up from above the nav
+   bar after a payment is recorded. Never blocks
+   taps (pointer-events: none).
+
+   Lifecycle:
+     JS calls showPaymentFeedback() →
+       sets text + color class →
+       adds .active  (slide-up + fade-in) →
+       after 1.8 s removes .active (fade-out)     */
+#payToast {
+  position: fixed;
+  bottom: 78px;          /* clears the 62px nav bar + a gap   */
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 500;
+  pointer-events: none;  /* never block taps underneath        */
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 99px;
+  font-family: 'Cairo', sans-serif;
+  font-size: .78rem;
+  font-weight: 700;
+  white-space: nowrap;
+
+  /* Default state: invisible and slightly below final position */
+  opacity: 0;
+  transition: opacity .22s ease, transform .22s ease;
+}
+/* Active: slide up into view */
+#payToast.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+/* Color variants — applied by showPaymentFeedback() */
+#payToast.toast-debt {
+  background: rgba(251,191,36,.15);
+  border: 1px solid rgba(251,191,36,.35);
+  color: #fbbf24;
+}
+#payToast.toast-progress {
+  background: rgba(129,140,248,.15);
+  border: 1px solid rgba(129,140,248,.35);
+  color: #818cf8;
+}
+#payToast.toast-clear {
+  background: rgba(74,222,128,.13);
+  border: 1px solid rgba(74,222,128,.32);
+  color: #4ade80;
+}
 
 /* ── Modals ────────────────────────────────────── */
 .modal-ov {
@@ -441,6 +627,38 @@ body {
 .plt-day { font-size:.57rem; color:var(--dim); margin-bottom:2px; line-height:1; }
 .plt-amt { font-size:.65rem; font-weight:700; line-height:1; }
 
+/* ── Behavioral Nudge Card ─────────────────────── */
+/*
+   A single card that holds ONE contextual message.
+   The border-right uses a "mood color" injected by JS
+   so the card's accent changes with every state.
+*/
+.nudge-card {
+  display: none;          /* hidden until JS decides there's something to say */
+  margin-bottom: 10px;
+  padding: 13px 15px;
+  border-right: 3px solid transparent;
+  border-radius: 14px;
+  background: var(--sur);
+  border-top: 1px solid var(--brd);
+  border-bottom: 1px solid var(--brd);
+  border-left: 1px solid var(--brd);
+  transition: border-color .3s;
+}
+.nudge-card.visible { display: block; }
+.nudge-icon    { font-size: 1.25rem; margin-bottom: 5px; line-height: 1; }
+.nudge-headline {
+  font-size: .88rem;
+  font-weight: 900;
+  line-height: 1.3;
+  margin-bottom: 4px;
+}
+.nudge-detail {
+  font-size: .72rem;
+  color: var(--sub);
+  line-height: 1.6;
+}
+
 /* ── Settings screen ───────────────────────────── */
 .sec-title { font-size:.79rem; font-weight:700; color:var(--sub); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--brd); }
 .settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px; }
@@ -450,11 +668,240 @@ body {
 .admin-badge-role  { font-size:.85rem; font-weight:700; color:#818cf8; }
 .admin-badge-email { font-size:.69rem; color:var(--sub); margin-top:2px; }
 
-/* ── Role-based visibility helpers ────────────── */
-/* By default admin-only elements are hidden;
-   JS adds .show after confirming role */
-.admin-only         { display:none !important; }
-.admin-only.visible { display:revert !important; }
+/* ── Behavioral Messages ───────────────────────── */
+/* Container sits between the today-card and stats row.
+   Each message is a colored pill-row that auto-updates. */
+#behavioralMessages { margin-bottom: 10px; }
+#behavioralMessages:empty { display: none; }
+
+.bmsg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  margin-bottom: 7px;
+  animation: bmsgIn .3s ease;
+}
+.bmsg:last-child { margin-bottom: 0; }
+@keyframes bmsgIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.bmsg-icon { font-size: 1.1rem; flex-shrink: 0; line-height: 1.4; }
+.bmsg-body { flex: 1; }
+.bmsg-text {
+  font-size: .78rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.bmsg-sub {
+  font-size: .67rem;
+  margin-top: 2px;
+  opacity: .75;
+}
+
+/* Severity variants */
+.bmsg-danger  { background: rgba(248,113,113,.08); border-color: rgba(248,113,113,.22); color: #f87171; }
+.bmsg-warn    { background: rgba(251,191,36,.07);  border-color: rgba(251,191,36,.22);  color: #fbbf24; }
+.bmsg-success { background: rgba(74,222,128,.07);  border-color: rgba(74,222,128,.2);   color: #4ade80; }
+.bmsg-info    { background: rgba(129,140,248,.08); border-color: rgba(129,140,248,.22); color: #818cf8; }
+
+/* ── Payment feedback toast ─────────────────────
+   Floats above the bottom nav, auto-dismisses.
+   Two variants: .toast-debt (amber) and
+   .toast-progress (green).
+   Animation: slides up from below, fades out.
+   ─────────────────────────────────────────── */
+#payToast {
+  position: fixed;
+  bottom: 76px;              /* sit above the 62px nav bar */
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 300;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px;
+  border-radius: 99px;       /* pill shape */
+  font-family: 'Cairo', sans-serif;
+  font-size: .82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;      /* never blocks taps on UI below */
+
+  /* Invisible by default; JS toggles .toast-show */
+  opacity: 0;
+  transition: opacity .22s ease, transform .22s ease;
+}
+/* Slide into view */
+#payToast.toast-show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+/* Amber variant — debt cleared / reduced */
+#payToast.toast-debt {
+  background: rgba(251,191,36,.15);
+  border: 1px solid rgba(251,191,36,.35);
+  color: #fbbf24;
+}
+/* Green variant — real progress made */
+#payToast.toast-progress {
+  background: rgba(74,222,128,.13);
+  border: 1px solid rgba(74,222,128,.32);
+  color: #4ade80;
+}
+
+/* ── Sheet debt warning ──────────────────────────
+   Banner shown inside the bottom sheet whenever
+   the active user has outstanding debt.
+   Hidden by default; openSheet() toggles it.
+   ─────────────────────────────────────────── */
+#sheetDebtWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(251,191,36,.08);
+  border: 1px solid rgba(251,191,36,.22);
+  margin-bottom: 11px;
+  font-size: .73rem;
+  font-weight: 700;
+  color: #fbbf24;
+  line-height: 1.55;
+  /* Hidden unless openSheet() reveals it */
+}
+#sheetDebtWarn.hidden { display: none; }
+#sheetDebtWarn svg   { flex-shrink: 0; margin-top: 1px; }
+</style>
+
+/* ── Comparison card ───────────────────────────── */
+/* Sits between subscriber cards and the chart     */
+.cmp-card {
+  padding: 13px 14px;
+  margin-bottom: 10px;
+}
+.cmp-title {
+  font-size: .72rem; font-weight: 700;
+  color: var(--sub); margin-bottom: 11px;
+  letter-spacing: .03em;
+}
+/* The two side-by-side user columns */
+.cmp-cols {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.cmp-user {
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--brd);
+  border-radius: 12px;
+  padding: 11px 10px;
+  text-align: center;
+}
+/* The "winning" user gets a green left-border stripe */
+.cmp-user.cmp-leader {
+  border-color: rgba(74,222,128,.35);
+  border-right: 3px solid #4ade80;   /* RTL: right = prominent side */
+  background: rgba(74,222,128,.04);
+}
+/* The "trailing" user gets a red left-border stripe */
+.cmp-user.cmp-trailer {
+  border-color: rgba(248,113,113,.3);
+  border-left: 3px solid #f87171;
+  background: rgba(248,113,113,.04);
+}
+.cmp-user-name { font-size: .75rem; font-weight: 700; margin-bottom: 5px; }
+.cmp-user-pct  {
+  font-size: 1.45rem; font-weight: 900;
+  line-height: 1; margin-bottom: 4px;
+}
+.cmp-user-paid { font-size: .62rem; color: var(--sub); margin-bottom: 6px; }
+/* Mini progress bar inside each comparison user column */
+.cmp-mini-bar-wrap {
+  height: 4px; background: rgba(255,255,255,.06);
+  border-radius: 99px; overflow: hidden;
+}
+.cmp-mini-bar-fill { height: 100%; border-radius: 99px; transition: width .5s ease; }
+
+/* The VS divider in the middle column */
+.cmp-vs {
+  font-size: .65rem; font-weight: 900;
+  color: var(--dim); text-align: center;
+}
+
+/* Difference lines — each is a pill-like row */
+.cmp-diff-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: .73rem; font-weight: 700;
+  padding: 8px 11px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--brd);
+  border-radius: 10px;
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+.cmp-diff-row:last-child { margin-bottom: 0; }
+.cmp-diff-icon { font-size: 1rem; flex-shrink: 0; }
+.cmp-diff-text { color: var(--sub); }
+.cmp-diff-text b { color: var(--text); }
+
+/* Tie state — both users equal */
+.cmp-tie {
+  text-align: center; font-size: .78rem;
+  font-weight: 700; color: var(--warn);
+  padding: 8px;
+}
+
+/* Subscriber card border overrides for rank highlight */
+/* These override the default borderTopColor set by JS */
+.sub-card.rank-first { border: 1px solid rgba(74,222,128,.4) !important; box-shadow: 0 0 0 1px rgba(74,222,128,.15); }
+.sub-card.rank-last  { border: 1px solid rgba(248,113,113,.35) !important; box-shadow: 0 0 0 1px rgba(248,113,113,.12); }
+
+/* ══ TOP SUMMARY SECTION ══════════════════════════
+   Appears at the very top of the "معاً" screen.
+   Shows each user's key numbers at a glance before
+   the grand progress card and comparison section.
+   ═════════════════════════════════════════════ */
+.debt-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px; border-radius: 12px;
+  background: rgba(248,113,113,.08);
+  border: 1px solid rgba(248,113,113,.28);
+  margin-bottom: 10px;
+  font-size: .78rem; font-weight: 700; color: #f87171; line-height: 1.5;
+}
+.debt-banner.hidden { display: none; }
+.debt-banner-icon   { flex-shrink: 0; }
+
+/* Two-column grid — one card per user */
+.summary-row {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 9px; margin-bottom: 10px;
+}
+.sum-card {
+  background: var(--sur); border: 1px solid var(--brd);
+  border-radius: 14px; padding: 13px 12px;
+  border-top: 3px solid transparent; /* accent color set by JS */
+}
+.sum-name  { font-size: .78rem; font-weight: 900; margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sum-paid  { font-size: 1.18rem; font-weight: 900; line-height: 1; margin-bottom: 2px; }
+.sum-paid small { font-size: .58rem; font-weight: 400; color: var(--dim); margin-right: 2px; }
+.sum-of    { font-size: .61rem; color: var(--dim); margin-bottom: 9px; }
+.sum-bar-wrap { height: 4px; background: rgba(255,255,255,.06); border-radius: 99px; overflow: hidden; margin-bottom: 9px; }
+.sum-bar-fill { height: 100%; border-radius: 99px; transition: width .55s ease, background .3s; }
+.sum-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.sum-stat  { background: rgba(255,255,255,.03); border: 1px solid var(--brd); border-radius: 8px; padding: 6px 7px; text-align: center; }
+.sum-stat-val { font-size: .82rem; font-weight: 900; line-height: 1.2; }
+.sum-stat-lbl { font-size: .55rem; color: var(--dim); margin-top: 2px; }
+/* Debt row inside each user card — red when debt > 0 */
+.sum-debt { display: flex; align-items: center; gap: 5px; margin-top: 7px; padding: 5px 8px; border-radius: 8px; background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.2); font-size: .65rem; font-weight: 700; color: #f87171; }
+.sum-debt.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -520,6 +967,9 @@ body {
       <button class="pay-btn" id="personalPayBtn" onclick="openPersonalTodaySheet()" disabled>—</button>
     </div>
 
+    <!-- Dynamic behavioral messages — populated by renderBehavioralMessages() -->
+    <div id="behavioralMessages"></div>
+
     <!-- Streak + Debt -->
     <div class="stats-row">
       <div class="card stat-card">
@@ -549,6 +999,16 @@ body {
         </div>
       </div>
       <div class="bar"><div class="bar-fill" id="persProgBar" style="width:0%;background:var(--c0)"></div></div>
+      <!-- Net-progress completion message — populated by renderPersonalPage() -->
+      <div id="persProgMsg" style="font-size:.72rem;font-weight:700;margin-top:8px;min-height:18px"></div>
+    </div>
+
+    <!-- Behavioral Nudge Card — one message at a time, priority-ordered -->
+    <!-- JS populates icon / headline / detail and toggles .visible      -->
+    <div class="nudge-card" id="nudgeCard">
+      <div class="nudge-icon"    id="nudgeIcon">—</div>
+      <div class="nudge-headline" id="nudgeHeadline">—</div>
+      <div class="nudge-detail"   id="nudgeDetail"></div>
     </div>
 
     <!-- Log Grid -->
@@ -561,7 +1021,31 @@ body {
 
   <!-- ══ SCREEN: معاً ════════════════════════════════════ -->
   <div id="screen-shared" class="screen-panel wrap">
-    <div id="conn-banner">⚠️ غير متصل — البيانات تُحفظ محلياً</div>
+    <div id="conn-banner">غير متصل — البيانات تُحفظ محلياً</div>
+
+    <!-- ── TOP SUMMARY ─────────────────────────────────────
+         Debt warning banner (hidden when no debt exists) + 
+         one card per user showing paid / debt / % / remaining.
+         Rendered by renderSummary() on every state update.
+         ─────────────────────────────────────────────────── -->
+    <div class="debt-banner hidden" id="summaryDebtBanner">
+      <div class="debt-banner-icon">
+        <!-- Alert triangle icon -->
+        <svg class="ui-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+          <line x1="12" x2="12" y1="9" y2="13"/>
+          <line x1="12" x2="12.01" y1="17" y2="17"/>
+        </svg>
+      </div>
+      <span id="summaryDebtMsg">يجب تسديد الديون قبل أن يُحتسب أي مبلغ كتقدم نحو الهدف</span>
+    </div>
+
+    <!-- Two user summary cards -->
+    <div class="summary-row" id="summaryRow">
+      <!-- Populated by renderSummary() — one .sum-card per sub -->
+    </div>
     <div class="hdr">
       <div>
         <div class="hdr-title">📊 معاً</div>
@@ -589,6 +1073,22 @@ body {
       </div>
     </div>
     <div class="sub-scroll" id="subCards"></div>
+
+    <!-- ══ COMPARISON CARD ══════════════════════════════ -->
+    <!-- Only shown when there are exactly 2 users        -->
+    <div class="card cmp-card" id="cmpCard" style="display:none">
+      <div class="cmp-title">⚔️ المقارنة المباشرة</div>
+
+      <!-- Two-column user comparison -->
+      <div class="cmp-cols" id="cmpCols">
+        <!-- Populated by renderComparison() -->
+      </div>
+
+      <!-- Difference pills -->
+      <div id="cmpDiffs">
+        <!-- Populated by renderComparison() -->
+      </div>
+    </div>
     <div class="card">
       <div class="chart-lbl">📈 التقدم الفعلي مقابل المتوقع</div>
       <canvas id="myChart"></canvas>
@@ -627,8 +1127,8 @@ body {
       <div class="sec-title">📅 إعدادات الدورة</div>
       <label class="modal-label">تاريخ بداية الدورة</label>
       <input class="modal-inp" id="settingsDateInp" type="date" style="margin-bottom:8px">
-      <div class="warn-box" id="settingsDateLock" style="display:none">🔒 لا يمكن تغيير التاريخ بعد إدخال بيانات.</div>
-      <button class="act-btn" id="settingsSaveDateBtn" onclick="saveSettingsDate()" style="width:100%;text-align:center">💾 حفظ التاريخ</button>
+      <div class="warn-box" id="settingsDateLock" style="display:none">لا يمكن تغيير التاريخ بعد إدخال بيانات. امسح البيانات أولاً لإعادة الضبط.</div>
+      <button class="act-btn" id="settingsSaveDateBtn" onclick="saveSettingsDate()" style="width:100%;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px">💾 حفظ التاريخ</button>
     </div>
 
     <div class="card">
@@ -748,6 +1248,19 @@ body {
     <div class="sheet-drag"></div>
     <div class="sheet-title" id="sheetTitle"></div>
     <div class="sheet-hint"  id="sheetHint"></div>
+
+    <!-- Debt warning — shown by openSheet() when user has outstanding debt -->
+    <div id="sheetDebtWarn" class="sheet-debt-warn hidden">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+        <line x1="12" x2="12" y1="9" y2="13"/>
+        <line x1="12" x2="12.01" y1="17" y2="17"/>
+      </svg>
+      <span id="sheetDebtWarnText">سيُسدَّد الدين أولاً قبل احتساب أي تقدم</span>
+    </div>
+
     <button class="sheet-def" id="sheetDefBtn" onclick="confirmDefault()"></button>
     <div class="sheet-div">أو أدخل مبلغاً مختلفاً</div>
     <div class="sheet-inp-row">
@@ -757,6 +1270,11 @@ body {
     <button class="sheet-clear" id="sheetClearBtn" onclick="clearDay()">✗ مسح الدفع</button>
   </div>
 </div>
+
+<!-- ══ PAYMENT FEEDBACK TOAST ════════════════════════════ -->
+<!-- Position: fixed above nav. JS toggles .toast-show,   -->
+<!-- .toast-debt, .toast-progress and auto-dismisses.      -->
+<div id="payToast" aria-live="polite"></div>
 
 
 <!-- ══════════════════════════════════════════════════════════
@@ -934,6 +1452,381 @@ function calcDebt(si) {
 }
 
 // ══════════════════════════════════════════════════════════
+//  NET PROGRESS CALCULATOR
+//  netPaid  = max(0, totalPaid - debt)
+//  progress = netPaid / target  (capped at 100%)
+//  Payments used to clear debt DO NOT count toward progress.
+// ══════════════════════════════════════════════════════════
+function calcNetProgress(si) {
+  if (!S || si < 0 || si >= S.subs.length) return { pct: 0, netPaid: 0 };
+  const sub       = S.subs[si];
+  const { debt }  = calcDebt(si);
+  const totalPaid = subPaid(sub);
+  // Subtract debt first — only what's left is real progress
+  const netPaid = Math.max(0, totalPaid - debt);
+  const pct     = sub.target > 0 ? Math.min((netPaid / sub.target) * 100, 100) : 0;
+  return { pct, netPaid };
+}
+
+// Returns a color string based on progress percentage thresholds
+function progressColor(pct) {
+  if (pct >= 80) return '#4ade80';   // green  — on track
+  if (pct >= 50) return '#fbbf24';   // orange — halfway there
+  return '#f87171';                   // red    — needs attention
+}
+
+// ══════════════════════════════════════════════════════════
+//  BEHAVIORAL NUDGE ENGINE
+//
+//  Evaluates the user's current situation and returns ONE
+//  contextual message — the highest-priority one that applies.
+//
+//  Priority ladder (top = most urgent):
+//    1. Has debt              → wake-up call
+//    2. Net progress > 80%   → encouragement to finish
+//    3. Streak > 5 days      → reward consistency
+//    4. Missed ≥ 3 past days → discipline warning
+//    5. Nothing applies      → null (card stays hidden)
+//
+//  Why priority order matters:
+//  Showing "great streak!" to someone with heavy debt would
+//  be misleading. The most critical signal always wins.
+// ══════════════════════════════════════════════════════════
+function calcBehavioralNudge(si) {
+  if (!S || si < 0 || si >= S.subs.length) return null;
+
+  const sub                       = S.subs[si];
+  const { debt, missedDays }      = calcDebt(si);
+  const { pct: netPct }           = calcNetProgress(si);
+  const { current: streakCur }    = calcStreak(si);
+  const dailyGoal                 = Math.round(sub.target / CYCLE_LEN);
+
+  // ── Case 1: Debt exists — most urgent ─────────────────
+  // "You are behind by X days (X amount)"
+  if (debt > 0) {
+    return {
+      icon:      '⚠️',
+      headline:  `متأخر بـ ${missedDays} ${missedDays === 1 ? 'يوم' : 'أيام'}`,
+      detail:    `عليك ${fmt(debt)} ل.س دين متراكم. المبلغ المدفوع يذهب لسداد الدين أولاً قبل أن يُحتسب كتقدم نحو هدفك.`,
+      color:     '#f87171'   // red — this needs action
+    };
+  }
+
+  // ── Case 2: Close to target (net > 80%) ───────────────
+  // "You're close. Don't break now."
+  if (netPct >= 80 && netPct < 100) {
+    return {
+      icon:      '🎯',
+      headline:  'أنت قريب. لا تتوقف الآن.',
+      detail:    `وصلت إلى ${netPct.toFixed(1)}% من هدفك. الجزء الأخير هو الأصعب — وهو الأهم.`,
+      color:     '#4ade80'   // green — positive momentum
+    };
+  }
+
+  // ── Case 3: Strong streak (> 5 consecutive days) ──────
+  // Reward consistency before warning about missed days,
+  // because a streak means they're currently on track.
+  if (streakCur > 5) {
+    return {
+      icon:      '🔥',
+      headline:  `ثبات قوي — ${streakCur} أيام متتالية`,
+      detail:    'الاستمرارية هي نصف المعركة. حافظ على هذا الإيقاع وسيأتي الهدف من تلقاء نفسه.',
+      color:     '#fbbf24'   // amber — warm reward
+    };
+  }
+
+  // ── Case 4: Missing multiple past days (≥ 3) ──────────
+  // "You are losing discipline"
+  // Only fires if streak check passed (meaning streak ≤ 5)
+  if (missedDays >= 3) {
+    return {
+      icon:      '📉',
+      headline:  'تفقد الانضباط',
+      detail:    `فاتك ${missedDays} ${missedDays === 1 ? 'يوم' : 'أيام'} حتى الآن. كل يوم فائت يُصعّب اللحاق لاحقاً.`,
+      color:     '#f87171'   // red — warning
+    };
+  }
+
+  // ── No condition triggered ─────────────────────────────
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════
+//  BEHAVIORAL MESSAGE ENGINE
+//
+//  Design rules:
+//  1. Debt message always shows first (most urgent — requires action).
+//  2. Discipline and streak messages are mutually exclusive:
+//     you can't be consistent AND losing discipline simultaneously.
+//     Debt takes higher priority than both.
+//  3. Proximity message ("close to target") is additive — it can
+//     stack with a streak message because both are motivating.
+//  4. Every message has a severity: danger > warn > success > info.
+//  5. Messages auto-update on every render cycle — no manual refresh.
+// ══════════════════════════════════════════════════════════
+function calcBehavioralMessages(si) {
+  if (!S || si < 0 || si >= S.subs.length) return [];
+
+  const sub                       = S.subs[si];
+  const { debt, missedDays }      = calcDebt(si);
+  const { current: streak }       = calcStreak(si);
+  const { pct: netPct }           = calcNetProgress(si);
+  const ti                        = todayIndex();
+  const dailyGoal                 = Math.round(sub.target / CYCLE_LEN);
+  const messages                  = [];
+
+  // ── 1. DEBT — most urgent, always shown if non-zero ──
+  // We convert the debt amount into "equivalent days" so the message
+  // is actionable: "you owe 3 days' worth of payments" is more
+  // concrete than "you owe 30,000".
+  if (debt > 0) {
+    const debtDays = dailyGoal > 0 ? Math.ceil(debt / dailyGoal) : missedDays;
+    messages.push({
+      severity: 'danger',
+      icon: '⚠️',
+      text: `متأخر بـ ${debtDays} ${debtDays === 1 ? 'يوم' : 'أيام'} (${fmt(debt)} ل.س)`,
+      sub:  `يجب تعويض هذا المبلغ حتى يُحتسب تقدمك الحقيقي.`
+    });
+  }
+
+  // ── 2. DISCIPLINE vs STREAK — mutually exclusive ──────
+  // We check discipline FIRST because it's more urgent than praise.
+  // Threshold: 3+ missed days in the past = losing discipline.
+  // If the user somehow has both streak > 5 AND missed days ≥ 3,
+  // the missed-days condition wins because recent behavior matters more.
+  if (missedDays >= 3) {
+    // Losing discipline — missed at least 3 past days
+    messages.push({
+      severity: 'warn',
+      icon: '📉',
+      text: 'أنت تفقد الانضباط',
+      sub: `${missedDays} يوم فائت دون دفع — كل يوم يُضاف للدين.`
+    });
+  } else if (streak > 5) {
+    // Consistent streak — only shown if discipline is intact
+    messages.push({
+      severity: 'success',
+      icon: '🔥',
+      text: `ثبات قوي — ${streak} أيام متتالية`,
+      sub: 'استمر، أنت تبني عادة حقيقية.'
+    });
+  } else if (streak >= 3) {
+    // Encourage a smaller but still notable streak
+    messages.push({
+      severity: 'info',
+      icon: '⚡',
+      text: `${streak} أيام متتالية — لا تكسر السلسلة`,
+      sub: 'لا تزال في بداية بناء العادة — كل يوم يُحسب.'
+    });
+  }
+
+  // ── 3. PROXIMITY — additive, stacks with any other message ──
+  // This fires when the user is close to the finish line (>80% net)
+  // but hasn't crossed it yet. The message changes tone at >95%
+  // to create a final push effect.
+  if (netPct >= 95 && netPct < 100) {
+    messages.push({
+      severity: 'success',
+      icon: '🏁',
+      text: 'على بُعد خطوة من الهدف!',
+      sub: `${(100 - netPct).toFixed(1)}% فقط — إياك أن تتوقف الآن.`
+    });
+  } else if (netPct >= 80 && netPct < 95) {
+    messages.push({
+      severity: 'info',
+      icon: '🎯',
+      text: 'أنت قريب — لا تتوقف الآن.',
+      sub: `وصلت إلى ${netPct.toFixed(0)}% من هدفك الشهري.`
+    });
+  }
+
+  // ── 4. COMPLETED — shown when goal is fully met ──────
+  if (netPct >= 100) {
+    messages.push({
+      severity: 'success',
+      icon: '🎉',
+      text: 'أتممت هدفك الشهري!',
+      sub: 'إنجاز حقيقي — كل ما تدفعه الآن هو مكسب إضافي.'
+    });
+  }
+
+  // ── 5. INACTIVE CYCLE — helpful context message ──────
+  // If today is outside the 30-day window entirely, show a
+  // gentle reminder instead of leaving the page empty.
+  if (ti < 0) {
+    messages.push({
+      severity: 'warn',
+      icon: '📅',
+      text: 'الدورة الحالية غير نشطة',
+      sub: 'راجع تاريخ البداية في إعدادات الإدارة.'
+    });
+  }
+
+  return messages;
+}
+
+// Converts a message object → an HTML string for one bmsg row
+function buildMsgHTML(msg) {
+  return `
+    <div class="bmsg bmsg-${msg.severity}">
+      <span class="bmsg-icon">${msg.icon}</span>
+      <div class="bmsg-body">
+        <div class="bmsg-text">${msg.text}</div>
+        ${msg.sub ? `<div class="bmsg-sub">${msg.sub}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderBehavioralMessages() {
+  const container = document.getElementById('behavioralMessages');
+  if (!container) return;
+  if (mySubIndex < 0) { container.innerHTML = ''; return; }
+
+  const msgs = calcBehavioralMessages(mySubIndex);
+
+  // Setting innerHTML triggers the CSS animation on each .bmsg element,
+  // giving a subtle slide-in effect every time data updates.
+  container.innerHTML = msgs.map(buildMsgHTML).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  COMPARISON ENGINE
+//  Compares two users on net progress (after debt).
+//  Returns a structured object that renderComparison() uses.
+// ══════════════════════════════════════════════════════════
+function calcComparison() {
+  if (!S || S.subs.length < 2) return null;
+
+  // Build a scored array — each entry carries everything we need for display
+  const scored = S.subs.map((sub, i) => {
+    const { pct, netPaid }    = calcNetProgress(i);
+    const { debt, missedDays } = calcDebt(i);
+    const dailyGoal = Math.round(sub.target / CYCLE_LEN);
+    return { i, sub, pct, netPaid, debt, missedDays, dailyGoal };
+  });
+
+  // Sort descending by net percentage — leader is always scored[0]
+  scored.sort((a, b) => b.pct - a.pct);
+
+  const leader  = scored[0];
+  const trailer = scored[scored.length - 1];
+  const isTie   = Math.abs(leader.pct - trailer.pct) < 0.01;  // floating-point safe
+
+  // Amount difference in raw money
+  const diffAmt = leader.netPaid - trailer.netPaid;
+
+  // "Days equivalent" — how many daily payments' worth of gap exists
+  // Uses the *trailer's* dailyGoal as the reference unit (more intuitive
+  // because it answers "how many of MY days am I behind?")
+  const diffDays = trailer.dailyGoal > 0
+    ? Math.round(diffAmt / trailer.dailyGoal)
+    : 0;
+
+  // Percentage point gap
+  const diffPct = leader.pct - trailer.pct;
+
+  return { leader, trailer, isTie, diffAmt, diffDays, diffPct, scored };
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER COMPARISON CARD
+// ══════════════════════════════════════════════════════════
+function renderComparison() {
+  const cmpCard = document.getElementById('cmpCard');
+  if (!cmpCard) return;
+
+  // Only makes sense with exactly 2 subscribers
+  if (!S || S.subs.length !== 2) { cmpCard.style.display = 'none'; return; }
+  cmpCard.style.display = '';
+
+  const cmp = calcComparison();
+  if (!cmp) return;
+
+  const { leader, trailer, isTie, diffAmt, diffDays, diffPct } = cmp;
+
+  // ── Two-column user section ────────────────────────────
+  const colsEl = document.getElementById('cmpCols');
+  if (colsEl) {
+    // We always show: leader (left in RTL layout) | VS | trailer (right)
+    const buildCol = (entry, isLeader) => {
+      const c          = clr(entry.i);
+      const barColor   = progressColor(entry.pct);
+      const borderClass = isLeader ? 'cmp-leader' : 'cmp-trailer';
+      const crown       = isLeader && !isTie ? '<span style="font-size:.85rem">👑</span> ' : '';
+      return `
+        <div class="cmp-user ${isTie ? '' : borderClass}">
+          <div class="cmp-user-name" style="color:${c}">${crown}${entry.sub.name}</div>
+          <div class="cmp-user-pct"  style="color:${barColor}">${entry.pct.toFixed(0)}%</div>
+          <div class="cmp-user-paid">${fmt(entry.netPaid)} ل.س صافٍ</div>
+          <div class="cmp-mini-bar-wrap">
+            <div class="cmp-mini-bar-fill"
+                 style="width:${entry.pct}%;background:${barColor}">
+            </div>
+          </div>
+        </div>`;
+    };
+
+    colsEl.innerHTML =
+      buildCol(leader, true) +
+      `<div class="cmp-vs">VS</div>` +
+      buildCol(trailer, false);
+  }
+
+  // ── Difference pills ───────────────────────────────────
+  const diffsEl = document.getElementById('cmpDiffs');
+  if (diffsEl) {
+    if (isTie) {
+      diffsEl.innerHTML = `<div class="cmp-tie">🤝 متساويان تماماً — لا يوجد فارق!</div>`;
+    } else {
+      // Determine the message from MY perspective (mySubIndex)
+      // "You are ahead" or "You are behind" is more personal than third-person
+      const myEntry  = cmp.scored.find(e => e.i === mySubIndex);
+      const isAhead  = myEntry && myEntry.i === leader.i;
+
+      // Perspective-aware prefix
+      const aheadText   = isAhead
+        ? `أنت متقدم بـ`
+        : `${leader.sub.name} متقدم بـ`;
+      const behindText  = isAhead
+        ? `أنت متقدم بـ`
+        : `أنت متأخر بـ`;
+
+      // Days pill — only show if gap ≥ 1 day
+      const daysPill = diffDays >= 1 ? `
+        <div class="cmp-diff-row">
+          <span class="cmp-diff-icon">📅</span>
+          <span class="cmp-diff-text">
+            ${isAhead ? `<b>أنت متقدم</b> بـ <b>${diffDays} يوم</b> عن ${trailer.sub.name}` : `<b>أنت متأخر</b> بـ <b>${diffDays} يوم</b> عن ${leader.sub.name}`}
+          </span>
+        </div>` : '';
+
+      diffsEl.innerHTML = `
+        <div class="cmp-diff-row">
+          <span class="cmp-diff-icon">💰</span>
+          <span class="cmp-diff-text">
+            الفارق المالي: <b>${fmt(diffAmt)} ل.س</b> لصالح <b>${leader.sub.name}</b>
+          </span>
+        </div>
+        <div class="cmp-diff-row">
+          <span class="cmp-diff-icon">📊</span>
+          <span class="cmp-diff-text">
+            الفارق بالنسبة: <b>${diffPct.toFixed(1)}%</b> لصالح <b>${leader.sub.name}</b>
+          </span>
+        </div>
+        ${daysPill}
+        <div class="cmp-diff-row">
+          <span class="cmp-diff-icon">${isAhead ? '🚀' : '⚡'}</span>
+          <span class="cmp-diff-text">
+            ${isAhead
+              ? `أنت <b>متقدم</b> — حافظ على الزخم!`
+              : `أنت <b>متأخر</b> — يمكنك اللحاق في <b>${diffDays || '< 1'} يوم</b>`}
+          </span>
+        </div>`;
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════
 //  ④ TWO-USER LOCK + ROLE ASSIGNMENT
 // ══════════════════════════════════════════════════════════
 /**
@@ -1066,12 +1959,123 @@ function renderAll() {
 // ── Shared screen ──────────────────────────────────────────
 function render() {
   if (!S) return;
+  renderSummary();      // ← top of shared screen: per-user summary cards
   renderGrand();
   renderSubCards();
+  renderComparison();
   renderTableIfNeeded();
   updateAllCells();
   highlightToday();
   renderChart();
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER SUMMARY
+//  Builds the two user-summary cards at the top of the
+//  shared screen. For each subscriber it shows:
+//    • Total paid (raw amount)
+//    • Net progress % (after debt deduction) + color-coded bar
+//    • Remaining to target
+//    • Debt amount (red indicator — hidden when debt = 0)
+//
+//  Also controls the debt warning banner: shown with a
+//  descriptive message when at least one user has debt > 0.
+// ══════════════════════════════════════════════════════════
+function renderSummary() {
+  const row    = document.getElementById('summaryRow');
+  const banner = document.getElementById('summaryDebtBanner');
+  const banMsg = document.getElementById('summaryDebtMsg');
+  if (!row || !S) return;
+
+  row.innerHTML = '';
+
+  let anyDebt    = false;
+  let debtNames  = [];  // collect names of users with debt for the banner message
+
+  S.subs.forEach((sub, i) => {
+    const c                        = clr(i);
+    const paid                     = subPaid(sub);
+    const { pct: netPct, netPaid } = calcNetProgress(i);
+    const { debt, missedDays }     = calcDebt(i);
+    const remaining                = Math.max(0, sub.target - paid);
+    const barColor                 = progressColor(netPct);
+
+    if (debt > 0) {
+      anyDebt = true;
+      debtNames.push(sub.name);
+    }
+
+    // Build the card HTML. Debt row is hidden with .hidden when debt = 0.
+    const card = document.createElement('div');
+    card.className = 'sum-card';
+    card.style.borderTopColor = c;
+
+    card.innerHTML = `
+      <!-- User name (accent-colored) -->
+      <div class="sum-name" style="color:${c}">${sub.name}</div>
+
+      <!-- Total paid — raw number for full transparency -->
+      <div class="sum-paid" style="color:${c}">
+        ${fmt(paid)} <small>ل.س</small>
+      </div>
+      <div class="sum-of">من ${fmt(sub.target)} ل.س</div>
+
+      <!-- Net-progress bar: color shifts red→orange→green with % -->
+      <div class="sum-bar-wrap">
+        <div class="sum-bar-fill"
+             style="width:${netPct}%; background:${barColor}">
+        </div>
+      </div>
+
+      <!-- Two-stat grid: net progress % | remaining -->
+      <div class="sum-stats">
+        <div class="sum-stat">
+          <div class="sum-stat-val" style="color:${barColor}">
+            ${netPct.toFixed(0)}%
+          </div>
+          <div class="sum-stat-lbl">تقدم صافٍ</div>
+        </div>
+        <div class="sum-stat">
+          <div class="sum-stat-val" style="color:${remaining > 0 ? 'var(--warn)' : 'var(--green)'}">
+            ${remaining > 0 ? fmt(remaining) : '✓'}
+          </div>
+          <div class="sum-stat-lbl">${remaining > 0 ? 'متبقٍ ل.س' : 'مكتمل'}</div>
+        </div>
+      </div>
+
+      <!-- Debt indicator — only visible when debt > 0 -->
+      <div class="sum-debt ${debt > 0 ? '' : 'hidden'}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+          <line x1="12" x2="12" y1="9" y2="13"/>
+          <line x1="12" x2="12.01" y1="17" y2="17"/>
+        </svg>
+        دين: ${fmt(debt)} ل.س · ${missedDays} يوم فائت
+      </div>`;
+
+    row.appendChild(card);
+  });
+
+  // ── Debt warning banner ─────────────────────────────────
+  // Shown when at least one user has outstanding debt.
+  // The message names the specific user(s) so it's actionable.
+  if (banner) {
+    if (anyDebt) {
+      banner.classList.remove('hidden');
+      if (banMsg) {
+        const who = debtNames.length === S.subs.length
+          ? 'كلاكما'           // both users have debt
+          : debtNames.join(' و');
+        banMsg.textContent =
+          `${who} ${debtNames.length > 1 ? 'لديهما' : 'لديه'} ديون — `
+          + `يجب تسديدها أولاً قبل أن تُحتسب المدفوعات كتقدم نحو الهدف`;
+      }
+    } else {
+      banner.classList.add('hidden');
+    }
+  }
 }
 
 function renderGrand() {
@@ -1098,6 +2102,10 @@ function renderSubCards() {
     const miss  = CYCLE_LEN - pDays;
     const c     = clr(i);
     const isAdmin = myRole === 'admin';
+    // Net progress (after debt deduction) — this is what we display
+    const { pct: netPct, netPaid } = calcNetProgress(i);
+    const pBar  = progressColor(netPct);
+
     const card = document.createElement('div');
     card.className = 'sub-card';
     card.style.borderTopColor = c;
@@ -1108,6 +2116,14 @@ function renderSubCards() {
           <span id="snT${i}">${sub.name}</span>
           ${isAdmin?`<span style="opacity:.3;font-size:.58rem">✏️</span>`:''}
         </div>
+        <!-- Net-progress badge beside name -->
+        <span style="
+          font-size:.65rem; font-weight:900;
+          padding:2px 8px; border-radius:99px;
+          background:${rgba(pBar,.14)};
+          color:${pBar};
+          flex-shrink:0;
+        ">${netPct.toFixed(0)}%</span>
         ${isAdmin&&S.subs.length>1?`<button class="sub-del" onclick="delUser(${i})" title="حذف">✕</button>`:''}
       </div>
       <div class="sub-amount" style="color:${c}">${fmt(paid)}</div>
@@ -1117,14 +2133,33 @@ function renderSubCards() {
              onblur="saveTarget(${i},this.value)" onkeydown="if(event.key==='Enter')this.blur()">`
         : `<div style="font-size:.66rem;color:var(--dim);margin-bottom:7px">هدف: ${fmt(sub.target)} ل.س</div>`
       }
-      <div class="sub-bar"><div class="sub-bar-fill" style="width:${pct}%;background:${c}"></div></div>
+      <!-- Progress bar uses net progress color, not the person's accent color -->
+      <div class="sub-bar">
+        <div class="sub-bar-fill" style="width:${netPct}%;background:${pBar}"></div>
+      </div>
+      <!-- "Completed X% of goal" label under the bar -->
+      <div style="font-size:.62rem;color:var(--sub);margin-bottom:6px">
+        أتمّ ${netPct.toFixed(0)}% من هدفه
+        ${netPct < 100 ? `· صافٍ: ${fmt(netPaid)} ل.س` : '· 🎉 أتمّ الهدف!'}
+      </div>
       <div class="chips">
-        <span class="chip chip-n">${pct.toFixed(0)}%</span>
         <span class="chip chip-ok">✓ ${pDays}</span>
         ${miss>0?`<span class="chip chip-bad">✗ ${miss}</span>`:''}
       </div>`;
     wrap.appendChild(card);
   });
+
+  // ── Apply rank borders (green = top, red = bottom) ──────
+  // Do this after all cards are rendered so we can query by index
+  if (S.subs.length >= 2) {
+    const cmp = calcComparison();
+    if (cmp && !cmp.isTie) {
+      const firstCard = wrap.children[cmp.leader.i];
+      const lastCard  = wrap.children[cmp.trailer.i];
+      if (firstCard) firstCard.classList.add('rank-first');
+      if (lastCard)  lastCard.classList.add('rank-last');
+    }
+  }
 }
 
 function saveTarget(i, raw) {
@@ -1204,51 +2239,138 @@ function renderPersonalPage() {
   }
   if (dDaysEl) dDaysEl.textContent = missedDays>0 ? `${missedDays} يوم فائت` : 'لا ديون 🎉';
 
-  // Progress bar
+  // Progress bar — net progress (after debt) is what actually counts
+  const { pct: netPct, netPaid } = calcNetProgress(mySubIndex);
+  const pBar = progressColor(netPct);
+
   const ppEl = document.getElementById('persProgPaid');
   const pcEl = document.getElementById('persProgPct');
   const pbEl = document.getElementById('persProgBar');
   const ptEl = document.getElementById('persProgTarget');
+  const pmEl = document.getElementById('persProgMsg');
+
+  // Show total paid (raw) in the big number — transparency about what was paid
   if (ppEl) ppEl.innerHTML   = `${fmt(paid)} <small>ل.س</small>`;
-  if (pcEl) pcEl.textContent = pct.toFixed(1)+'%';
-  if (pbEl) { pbEl.style.width=pct+'%'; pbEl.style.background=c; }
+  // Percentage shown is NET (after debt) — this is the real progress
+  if (pcEl) {
+    pcEl.textContent  = netPct.toFixed(1) + '%';
+    pcEl.style.color  = pBar;
+  }
+  if (pbEl) {
+    pbEl.style.width      = netPct + '%';
+    pbEl.style.background = pBar;
+    pbEl.style.transition = 'width .55s ease, background .3s';
+  }
   if (ptEl) ptEl.textContent = fmt(sub.target);
+
+  // Completion sentence below the bar
+  if (pmEl) {
+    if (netPct >= 100) {
+      pmEl.textContent = '🎉 أتممت هدفك كاملاً!';
+      pmEl.style.color = '#4ade80';
+    } else {
+      pmEl.textContent = `أتممت ${netPct.toFixed(1)}% من هدفك الشهري`;
+      pmEl.style.color = pBar;
+    }
+  }
 
   // Log grid
   renderPersonalLogGrid(sub, c, ti);
+
+  // Behavioral messages — computed last so they have all data available
+  renderBehavioralMessages();
+
+  // Behavioral nudge — evaluate situation and show one message
+  renderNudge(mySubIndex);
 }
 
 function renderPersonalLogGrid(sub, c, ti) {
   const grid = document.getElementById('personalLogGrid');
   if (!grid) return;
   grid.innerHTML = '';
+
+  // Use the same accounting as the shared table so states always match
+  const acct = buildDayAccounting(mySubIndex);
   const frag = document.createDocumentFragment();
 
   for (let d = 0; d < CYCLE_LEN; d++) {
-    const v       = sub.log[d]||0;
-    const isToday = d === ti;
-    const isPast  = ti >= 0 && d < ti;
-    const missed  = isPast && v === 0;
-
+    const day = acct[d] || { state: 'future', v: 0 };
     const tile = document.createElement('div');
-    tile.className = 'plt'
-      + (v>0     ? ' plt-paid'   : '')
-      + (missed  ? ' plt-missed' : '')
-      + (isToday ? ' plt-today'  : '');
+    tile.className = 'plt';
 
-    const amtText = v>0
-      ? (v>=10000 ? `${Math.round(v/1000)}k` : fmt(v))
-      : (missed ? '✗' : (isToday ? '○' : '—'));
-    const amtColor = v>0 ? c : (missed?'var(--red)':(isToday?'var(--today-acc)':'var(--dim)'));
+    let amtText, amtColor, badgeHtml = '';
+    switch (day.state) {
+      case 'progress':
+        tile.classList.add('plt-paid');
+        amtColor = c;
+        amtText  = day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v);
+        break;
+      case 'debt':
+        tile.classList.add('plt-paid');
+        amtColor  = '#fbbf24';
+        amtText   = day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v);
+        badgeHtml = '<span style="display:block;font-size:.47rem;font-weight:900;color:#fbbf24;opacity:.8;line-height:1;margin-top:1px">دين</span>';
+        break;
+      case 'mixed':
+        tile.classList.add('plt-paid');
+        amtColor  = '#a5b4fc';
+        amtText   = day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v);
+        badgeHtml = '<span style="display:block;font-size:.47rem;font-weight:900;color:#a5b4fc;opacity:.8;line-height:1;margin-top:1px">جزئي</span>';
+        break;
+      case 'missed':
+        tile.classList.add('plt-missed');
+        amtColor = 'var(--red)'; amtText = '✗';
+        break;
+      case 'today':
+        tile.classList.add('plt-today');
+        amtColor = 'var(--today-acc)';
+        amtText  = (sub.log[d]||0)>0
+          ? ((sub.log[d]>=10000 ? Math.round(sub.log[d]/1000)+'k' : fmt(sub.log[d])))
+          : '○';
+        break;
+      default:
+        amtColor = 'var(--dim)'; amtText = '—';
+    }
 
-    tile.innerHTML = `
-      <div class="plt-day">${d+1}</div>
-      <div class="plt-amt" style="color:${amtColor}">${amtText}</div>`;
+    tile.innerHTML =
+      '<div class="plt-day">' + (d+1) + '</div>' +
+      '<div class="plt-amt" style="color:' + amtColor + '">' + amtText + '</div>' +
+      badgeHtml;
 
     tile.addEventListener('click', () => openSheet(d, mySubIndex));
+    tile.addEventListener('mouseenter', () => showCellTip(tile, mySubIndex, d));
+    tile.addEventListener('mouseleave', hideCellTip);
     frag.appendChild(tile);
   }
   grid.appendChild(frag);
+}
+
+// ── Nudge renderer ─────────────────────────────────────────
+// Reads the result of calcBehavioralNudge and updates the card.
+// If no nudge applies, the card hides itself cleanly.
+function renderNudge(si) {
+  const card     = document.getElementById('nudgeCard');
+  const iconEl   = document.getElementById('nudgeIcon');
+  const headEl   = document.getElementById('nudgeHeadline');
+  const detailEl = document.getElementById('nudgeDetail');
+  if (!card) return;
+
+  const nudge = calcBehavioralNudge(si);
+
+  if (!nudge) {
+    // Nothing to say right now — keep the card invisible
+    card.classList.remove('visible');
+    return;
+  }
+
+  // Inject content and apply the mood color to the left accent border
+  card.style.borderRightColor = nudge.color;
+  if (iconEl)   iconEl.textContent   = nudge.icon;
+  if (headEl)   { headEl.textContent = nudge.headline; headEl.style.color = nudge.color; }
+  if (detailEl) detailEl.textContent = nudge.detail;
+
+  // Make the card visible (CSS .visible sets display:block)
+  card.classList.add('visible');
 }
 
 // ── Admin Settings Screen ──────────────────────────────────
@@ -1348,35 +2470,268 @@ function buildTable() {
   tb.appendChild(frag);
 }
 
+// ══════════════════════════════════════════════════════════
+//  PER-DAY ACCOUNTING  (the key algorithmic piece)
+//
+//  Walks chronologically through a subscriber's log and
+//  classifies every day into one of five states:
+//
+//   'progress' — payment made, all of it is genuine progress
+//   'debt'     — payment made, all of it went toward erasing debt
+//   'mixed'    — payment made, split between debt clearance + progress
+//   'missed'   — no payment on a past day → adds dailyGoal to debt
+//   'today'    — current day, not yet paid
+//   'future'   — day hasn't arrived yet
+//
+//  The running-ledger approach is the only way to do this
+//  accurately per-day. A simple totalPaid - totalDebt would
+//  only tell you the net position, not which specific payments
+//  went where.
+//
+//  Returns: Array[CYCLE_LEN] of
+//    { state, v, debtCleared, progressAmt, runningDebtAfter }
+// ══════════════════════════════════════════════════════════
+function buildDayAccounting(si) {
+  if (!S || si < 0 || si >= S.subs.length) return [];
+
+  const sub       = S.subs[si];
+  const ti        = todayIndex();
+  const dailyGoal = Math.round(sub.target / CYCLE_LEN);
+  const result    = [];
+
+  let runningDebt = 0;   // debt accumulated so far as we walk forward
+
+  for (let d = 0; d < CYCLE_LEN; d++) {
+    const v      = sub.log[d] || 0;
+    const isPast = ti >= 0 && d < ti;
+    const isToday = d === ti;
+
+    if (isToday) {
+      result.push({ state: 'today', v, debtCleared: 0, progressAmt: 0, runningDebtAfter: runningDebt });
+      continue;
+    }
+
+    if (!isPast) {
+      result.push({ state: 'future', v: 0, debtCleared: 0, progressAmt: 0, runningDebtAfter: runningDebt });
+      continue;
+    }
+
+    // Past day logic — chronological ledger
+    if (v === 0) {
+      // Missed: the debt grows by one day's goal
+      runningDebt += dailyGoal;
+      result.push({ state: 'missed', v: 0, debtCleared: 0, progressAmt: 0, runningDebtAfter: runningDebt });
+    } else {
+      // Paid: first clear any outstanding debt, then count remainder as progress
+      const debtCleared   = Math.min(v, runningDebt);
+      const progressAmt   = Math.max(0, v - debtCleared);
+      runningDebt         = Math.max(0, runningDebt - v);
+
+      let state;
+      if (debtCleared > 0 && progressAmt > 0) state = 'mixed';
+      else if (debtCleared > 0)               state = 'debt';
+      else                                    state = 'progress';
+
+      result.push({ state, v, debtCleared, progressAmt, runningDebtAfter: runningDebt });
+    }
+  }
+
+  return result;
+}
+
+// Accounting cache — rebuilt once per render cycle, shared across all
+// updateCell() calls so we don't recompute for every single cell.
+// Key: subscriber index → Array from buildDayAccounting()
+let _accountingCache = {};
+
+function getAccounting(si) {
+  if (!_accountingCache[si]) _accountingCache[si] = buildDayAccounting(si);
+  return _accountingCache[si];
+}
+
+function clearAccountingCache() {
+  _accountingCache = {};
+}
+
+// ══════════════════════════════════════════════════════════
+//  TOOLTIP ENGINE
+//  Single shared tooltip repositioned on hover / tap.
+// ══════════════════════════════════════════════════════════
+let _tipTimeout = null;
+
+function showCellTip(anchorEl, si, d) {
+  const tip      = document.getElementById('cellTip');
+  const amtEl    = document.getElementById('tipAmount');
+  const typeEl   = document.getElementById('tipType');
+  const detailEl = document.getElementById('tipDetail');
+  if (!tip || !S) return;
+
+  const sub       = S.subs[si];
+  const dailyGoal = Math.round(sub.target / CYCLE_LEN);
+  const acct      = getAccounting(si);
+  const day       = acct[d];
+  if (!day) return;
+
+  // ── Build content based on day state ─────────────────────
+  let amtText, typeClass, typeText, detailText;
+
+  if (day.state === 'progress') {
+    amtText    = `${fmt(day.v)} ل.س`;
+    typeClass  = 'tp-progress';
+    typeText   = '✓ تقدم فعلي';
+    detailText = `يوم ${d+1} · ${dayLabel(d)} — كل المبلغ يُحتسب نحو هدفك`;
+
+  } else if (day.state === 'debt') {
+    amtText    = `${fmt(day.v)} ل.س`;
+    typeClass  = 'tp-debt';
+    typeText   = '↑ تسديد دين';
+    detailText = `يوم ${d+1} · ${dayLabel(d)} — سدّد ${fmt(day.debtCleared)} ل.س من الدين المتراكم`;
+
+  } else if (day.state === 'mixed') {
+    amtText    = `${fmt(day.v)} ل.س`;
+    typeClass  = 'tp-mixed';
+    typeText   = '⟳ جزئي';
+    detailText = `${fmt(day.debtCleared)} ل.س تسديد دين · ${fmt(day.progressAmt)} ل.س تقدم فعلي`;
+
+  } else if (day.state === 'missed') {
+    amtText    = 'لم يُدفع';
+    typeClass  = 'tp-missed';
+    typeText   = '✗ يوم فائت';
+    detailText = `يوم ${d+1} · ${dayLabel(d)} — أضاف ${fmt(dailyGoal)} ل.س للدين`;
+
+  } else if (day.state === 'today') {
+    const todayAmt = sub.log[d] || 0;
+    amtText    = todayAmt > 0 ? `${fmt(todayAmt)} ل.س` : 'لم تدفع بعد';
+    typeClass  = 'tp-today';
+    typeText   = 'اليوم';
+    detailText = todayAmt > 0
+      ? `دفعت اليوم — يمكنك تعديل المبلغ`
+      : `الهدف اليومي: ${fmt(dailyGoal)} ل.س`;
+
+  } else {  // future
+    amtText    = '—';
+    typeClass  = 'tp-future';
+    typeText   = 'لم يأتِ بعد';
+    detailText = `يوم ${d+1} · ${dayLabel(d)}`;
+  }
+
+  // ── Inject content ────────────────────────────────────────
+  if (amtEl)    amtEl.textContent    = amtText;
+  if (typeEl)   { typeEl.textContent = typeText; typeEl.className = `tip-type ${typeClass}`; }
+  if (detailEl) detailEl.textContent = detailText;
+
+  // ── Position above (or below) the anchor element ─────────
+  const rect   = anchorEl.getBoundingClientRect();
+  const tipH   = tip.offsetHeight || 90;   // estimate before first paint
+  const tipW   = tip.offsetWidth  || 170;
+  const margin = 8;
+
+  // Prefer above; fall back to below if not enough room
+  let top = rect.top - tipH - margin;
+  if (top < 8) top = rect.bottom + margin;
+
+  // Clamp horizontally to viewport (RTL: anchor from right)
+  let left = rect.right - tipW;
+  if (left < 8) left = 8;
+  if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+
+  tip.style.top  = `${top}px`;
+  tip.style.left = `${left}px`;
+  tip.classList.add('tip-visible');
+}
+
+function hideCellTip() {
+  const tip = document.getElementById('cellTip');
+  if (tip) tip.classList.remove('tip-visible');
+}
+
+
+
 function updateCell(d, i) {
   const cell = document.getElementById(`c-${d}-${i}`);
   const sub  = S.subs[i];
-  if (!cell||!sub) return;
-  const v      = sub.log[d]||0;
-  const c      = clr(i);
-  const ti     = todayIndex();
-  const isPast = ti>=0 && d<ti;
+  if (!cell || !sub) return;
 
-  if (v>0) {
-    cell.className = 'day-cell paid';
-    cell.style.background = rgba(c,0.15);
-    cell.style.color = v>=DFLT_AMT ? c : 'var(--warn)';
-    cell.textContent = fmt(v);
-  } else if (isPast) {
-    cell.className = 'day-cell unpaid missed-past';
-    cell.style.background = cell.style.color = '';
-    cell.textContent = '✗';
-  } else {
-    cell.className = 'day-cell unpaid';
-    cell.style.background = 'transparent'; cell.style.color = 'var(--dim)';
-    cell.textContent = '—';
+  const acct = getAccounting(i);
+  const day  = acct[d] || { state: 'future', v: 0 };
+
+  // Clear all previous inline styles and state classes in one pass
+  cell.className = 'day-cell';
+  cell.style.cssText = '';
+
+  switch (day.state) {
+
+    case 'progress':
+      cell.classList.add('dc-progress');
+      cell.innerHTML = `<span style="display:block;font-size:.74rem;font-weight:900;line-height:1.1">
+        ${day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v)}
+      </span>`;
+      break;
+
+    case 'debt':
+      cell.classList.add('dc-debt');
+      cell.innerHTML = `<span style="display:block;font-size:.74rem;font-weight:900;line-height:1.1">
+          ${day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v)}
+        </span>
+        <span class="dc-badge">دين</span>`;
+      break;
+
+    case 'mixed':
+      cell.classList.add('dc-mixed');
+      cell.innerHTML = `<span style="display:block;font-size:.74rem;font-weight:900;line-height:1.1">
+          ${day.v >= 10000 ? Math.round(day.v/1000)+'k' : fmt(day.v)}
+        </span>
+        <span class="dc-badge">جزئي</span>`;
+      break;
+
+    case 'missed':
+      cell.classList.add('dc-missed');
+      cell.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>`;
+      break;
+
+    case 'today': {
+      const todayPaid = sub.log[d] || 0;
+      if (todayPaid > 0) {
+        cell.classList.add('dc-progress');
+        cell.style.outline = '2px solid rgba(239,68,68,.5)';
+        cell.style.outlineOffset = '2px';
+        cell.innerHTML = `<span style="display:block;font-size:.74rem;font-weight:900;line-height:1.1">
+          ${todayPaid >= 10000 ? Math.round(todayPaid/1000)+'k' : fmt(todayPaid)}
+        </span>`;
+      } else {
+        cell.classList.add('dc-today');
+        cell.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>`;
+      }
+      break;
+    }
+
+    default:  // future
+      cell.classList.add('dc-future');
+      cell.textContent = '—';
+      break;
   }
-  // Members can't edit other person's cells
+
+  // Members can't interact with the other person's cells
   if (myRole !== 'admin' && i !== mySubIndex)
     cell.classList.add('readonly');
 }
 
+
 function updateAllCells() {
+  // Invalidate the per-render accounting cache first so every
+  // cell this cycle reads fresh data from the current state S.
+  clearAccountingCache();
   for (let d=0; d<CYCLE_LEN; d++) S.subs.forEach((_,i)=>updateCell(d,i));
 }
 
@@ -1386,11 +2741,15 @@ function highlightToday() {
   if (ti>=0) { const row=document.getElementById(`row-${ti}`); if(row) row.classList.add('today-row'); }
 }
 
-// ── Cell events (permission-aware) ─────────────────────────
+// ── Cell events (permission-aware + tooltip) ────────────────
 function attachCellEvents(cell, d, i) {
   let dblFlag = false;
   const canEdit = () => myRole==='admin' || i===mySubIndex;
 
+  // ── Tooltip: desktop hover ──────────────────────────────
+
+
+  // ── Double-click: apply default amount ─────────────────
   cell.addEventListener('dblclick', e => {
     e.preventDefault();
     if (!canEdit()) return;
@@ -1399,52 +2758,195 @@ function attachCellEvents(cell, d, i) {
     applyDefault(d, i);
     setTimeout(()=>{ dblFlag=false; }, 400);
   });
+
+  // ── Single click: open bottom sheet ────────────────────
   cell.addEventListener('click', () => {
     if (dblFlag || !canEdit()) return;
     openSheet(d, i);
   });
+
   cell.addEventListener('contextmenu', e => e.preventDefault());
 }
 
 function applyDefault(d, i) {
-  S.subs[i].log[d] = DFLT_AMT; save();
-  updateCell(d,i); renderGrand(); renderSubCards(); renderChart();
-  if (i===mySubIndex) renderPersonalPage();
+  // Snapshot debt BEFORE writing — this is what determines the toast message.
+  // Once we write the log entry and call save(), calcDebt() will return
+  // the updated (possibly lower) debt, so we must capture it now.
+  const debtBefore = calcDebt(i).debt;
+
+  S.subs[i].log[d] = DFLT_AMT;
+  save();
+  updateCell(d, i);
+  renderGrand();
+  renderSubCards();
+  renderSummary();
+  renderChart();
+  if (i === mySubIndex) renderPersonalPage();
+
+  // Show feedback toast based on whether the payment addressed debt or progress
+  showPaymentToast(debtBefore, DFLT_AMT, i);
+}
+
+// ══════════════════════════════════════════════════════════
+//  PAYMENT FEEDBACK TOAST
+//
+//  Called after every payment. Compares the debt that existed
+//  BEFORE the payment (debtBefore) to decide what to show:
+//
+//    debtBefore > 0  →  "Debt reduced"  (amber)
+//    debtBefore = 0  →  "Progress increased"  (green)
+//
+//  Why snapshot before, not after?
+//  Because calcDebt() counts past missed days. Writing to a
+//  past missed day reduces debt immediately. Writing to today
+//  doesn't change the debt count — but the payment still
+//  contributes to netPaid which offsets debt in progress calc.
+//  Either way, if debt existed before the payment, the user
+//  needs to know their payment went toward it.
+//
+//  The toast auto-dismisses after 2.4 seconds. A pending timer
+//  is cleared if a second payment arrives before dismissal,
+//  so rapid payments don't stack overlapping toasts.
+// ══════════════════════════════════════════════════════════
+let _toastTimer = null;
+
+function showPaymentToast(debtBefore, amountPaid, subIndex) {
+  const toast = document.getElementById('payToast');
+  if (!toast) return;
+
+  // Determine the current debt after payment so we can craft a specific message
+  const debtAfter    = calcDebt(subIndex).debt;
+  const debtReduced  = debtBefore > 0;
+  const debtCleared  = debtBefore > 0 && debtAfter === 0;
+
+  // Build icon + message based on outcome
+  // Using inline SVG here keeps the toast self-contained (no DOM queries needed)
+  const checkIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </svg>`;
+
+  const alertIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+    <line x1="12" x2="12" y1="9" y2="13"/>
+    <line x1="12" x2="12.01" y1="17" y2="17"/>
+  </svg>`;
+
+  let type, message;
+
+  if (debtCleared) {
+    // The payment fully cleared the debt — strong positive signal
+    type    = 'progress';
+    message = `${checkIcon} الدين صُفِّر — تقدم مُحتسَب الآن`;
+  } else if (debtReduced) {
+    // Debt still exists but this payment helped reduce it
+    const reduced = debtBefore - debtAfter;
+    type    = 'debt';
+    message = reduced > 0
+      ? `${alertIcon} الدين انخفض: −${fmt(reduced)} ل.س`
+      : `${alertIcon} سيساعد على تسديد الدين`;
+  } else {
+    // No debt existed — payment goes straight to real progress
+    type    = 'progress';
+    message = `${checkIcon} تقدم +${fmt(amountPaid)} ل.س`;
+  }
+
+  // Clear any in-flight dismiss timer to avoid flicker on rapid payments
+  if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+
+  // Reset classes, set content, then trigger show
+  toast.className       = `toast-${type}`;   // sets color variant
+  toast.innerHTML       = message;
+  // Force a reflow so the CSS transition fires even if the toast was already showing
+  void toast.offsetWidth;
+  toast.classList.add('toast-show');
+
+  // Auto-dismiss after 2.4 s
+  _toastTimer = setTimeout(() => {
+    toast.classList.remove('toast-show');
+    _toastTimer = null;
+  }, 2400);
 }
 
 // ══════════════════════════════════════════════════════════
 //  BOTTOM SHEET
 // ══════════════════════════════════════════════════════════
 function openSheet(d, i) {
-  _d=d; _i=i;
-  const sub=S.subs[i], v=sub.log[d]||0, c=clr(i);
-  document.getElementById('sheetTitle').textContent = `يوم ${d+1}  •  ${dayLabel(d)}  —  ${sub.name}`;
-  document.getElementById('sheetHint').textContent  = v>0 ? `المدفوع: ${fmt(v)} ل.س` : 'لم يُسجَّل دفع — نقرتان لـ 10,000 فوراً';
+  _d = d; _i = i;
+  const sub = S.subs[i];
+  const v   = sub.log[d] || 0;
+  const c   = clr(i);
+
+  // ── Standard sheet content ──────────────────────────────
+  document.getElementById('sheetTitle').textContent =
+    `يوم ${d + 1}  •  ${dayLabel(d)}  —  ${sub.name}`;
+  document.getElementById('sheetHint').textContent =
+    v > 0 ? `المدفوع: ${fmt(v)} ل.س` : 'لم يُسجَّل دفع — نقرتان لـ 10,000 فوراً';
+
   const btn = document.getElementById('sheetDefBtn');
-  btn.textContent = `✓ تأكيد الافتراضي  (${fmt(DFLT_AMT)} ل.س)`; btn.style.background = c;
-  document.getElementById('sheetClearBtn').style.display = v>0 ? '' : 'none';
+  btn.textContent      = `✓ تأكيد الافتراضي  (${fmt(DFLT_AMT)} ل.س)`;
+  btn.style.background = c;
+
+  document.getElementById('sheetClearBtn').style.display = v > 0 ? '' : 'none';
   document.getElementById('sheetInp').value = '';
+
+  // ── Debt warning banner ─────────────────────────────────
+  const debtWarn = document.getElementById('sheetDebtWarn');
+  const debtText = document.getElementById('sheetDebtWarnText');
+  if (debtWarn) {
+    const { debt, missedDays } = calcDebt(i);
+    if (debt > 0) {
+      debtWarn.classList.remove('hidden');
+      if (debtText) {
+        debtText.textContent = missedDays > 1
+          ? `لديك دين ${fmt(debt)} ل.س (${missedDays} أيام فائتة) — سيُسدَّد الدين أولاً`
+          : `لديك دين ${fmt(debt)} ل.س — سيُسدَّد قبل احتساب أي تقدم`;
+      }
+    } else {
+      debtWarn.classList.add('hidden');
+    }
+  }
+
   document.getElementById('sheet').classList.add('open');
-  setTimeout(()=>document.getElementById('sheetInp').focus(), 280);
+  setTimeout(() => document.getElementById('sheetInp').focus(), 280);
 }
 
-function closeSheet()     { document.getElementById('sheet').classList.remove('open'); }
-function confirmDefault() { applyDefault(_d,_i); closeSheet(); }
+function closeSheet() { document.getElementById('sheet').classList.remove('open'); }
+
+// confirmDefault: called from the sheet's default-amount button
+function confirmDefault() { applyDefault(_d, _i); closeSheet(); }
 
 function confirmCustom() {
-  const raw = document.getElementById('sheetInp').value.replace(/\D/g,'');
-  const v   = Math.abs(parseInt(raw)||0);
+  const raw = document.getElementById('sheetInp').value.replace(/\D/g, '');
+  const v   = Math.abs(parseInt(raw) || 0);
   if (!v) { document.getElementById('sheetInp').focus(); return; }
-  S.subs[_i].log[_d] = Math.min(v,MAX_INPUT); save();
-  updateCell(_d,_i); renderGrand(); renderSubCards(); renderChart();
-  if (_i===mySubIndex) renderPersonalPage();
+
+  // Snapshot debt before writing — same pattern as applyDefault
+  const debtBefore = calcDebt(_i).debt;
+
+  S.subs[_i].log[_d] = Math.min(v, MAX_INPUT);
+  save();
+  updateCell(_d, _i);
+  renderGrand();
+  renderSubCards();
+  renderSummary();
+  renderChart();
+  if (_i === mySubIndex) renderPersonalPage();
+
+  showPaymentToast(debtBefore, v, _i);
   closeSheet();
 }
 
 function clearDay() {
-  S.subs[_i].log[_d] = 0; save();
-  updateCell(_d,_i); renderGrand(); renderSubCards(); renderChart();
-  if (_i===mySubIndex) renderPersonalPage();
+  S.subs[_i].log[_d] = 0;
+  save();
+  updateCell(_d, _i);
+  renderGrand();
+  renderSubCards();
+  renderSummary();
+  renderChart();
+  if (_i === mySubIndex) renderPersonalPage();
   closeSheet();
 }
 
@@ -1821,5 +3323,13 @@ onAuthStateChanged(auth, user => {
 // ══════════════════════════════════════════════════════════
 
 </script>
+<!-- ══ SHARED CELL TOOLTIP ════════════════════════════════ -->
+<!-- Single floating element repositioned by JS on hover/tap  -->
+<div id="cellTip">
+  <div class="tip-amount" id="tipAmount">—</div>
+  <span class="tip-type"  id="tipType">—</span>
+  <div class="tip-detail" id="tipDetail"></div>
+</div>
+
 </body>
 </html>
