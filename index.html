@@ -1146,6 +1146,14 @@ body {
       <div id="settingsUsersInfo" style="font-size:.74rem;color:var(--sub);line-height:1.9"></div>
     </div>
 
+    <div class="card">
+      <div class="sec-title">🔧 إصلاح المشاكل</div>
+      <div class="warn-box" style="margin-bottom:10px">
+        إذا لم يتمكن صديقك من الدخول رغم ظهور "1/2" هنا، استخدم هذا الزر لإعادة ضبط إعدادات المستخدمين.
+      </div>
+      <button class="act-btn" style="width:100%;text-align:center" onclick="resetUserConfig()">🔄 إعادة ضبط إعدادات المستخدمين</button>
+    </div>
+
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
   </div><!-- /screen-settings -->
 
@@ -2416,6 +2424,32 @@ function saveSettingsDate() {
   save();
 }
 window.saveSettingsDate = saveSettingsDate;
+
+// ══════════════════════════════════════════════════════════
+//  RESET USER CONFIG (Fix locked state when only 1 user)
+// ══════════════════════════════════════════════════════════
+async function resetUserConfig() {
+  if (myRole !== 'admin') {
+    alert('فقط المدير يمكنه إعادة الضبط');
+    return;
+  }
+  if (!confirm('هل أنت متأكد؟\nسيتم إعادة ضبط إعدادات المستخدمين للسماح لشخص جديد بالدخول.\nبياناتك الشخصية لن تتأثر.')) return;
+  
+  try {
+    const newConfig = {
+      allowedUids: [currentUser.uid],
+      adminUid:    currentUser.uid,
+      locked:      false,
+      uidToIndex:  { [currentUser.uid]: 0 }
+    };
+    await setDoc(CONFIG_REF, newConfig);
+    alert('✅ تم إعادة الضبط بنجاح!\nاطلب من صديقك تسجيل الدخول الآن.');
+  } catch(err) {
+    console.error('Reset error:', err);
+    alert('❌ فشل إعادة الضبط: ' + err.message);
+  }
+}
+window.resetUserConfig = resetUserConfig;
 
 // ══════════════════════════════════════════════════════════
 //  TABLE
